@@ -83,15 +83,19 @@ def export_view(
     # Compute map layout
     size, pan_x, pan_y = _fit_hex_size(campaign, width, height)
 
-    # Determine fog set + filtered units
+    # Determine fog set + filtered units/missions
     if faction_id is None:
-        fog_set    = None
-        units_save = None
+        fog_set        = None
+        units_save     = None
+        missions_save  = None
     else:
-        fog_set    = visible_hexes(campaign, faction_id)
-        visible    = visible_units(campaign, faction_id, fog_set)
-        units_save = campaign.units
-        campaign.units = visible
+        fog_set        = visible_hexes(campaign, faction_id)
+        visible        = visible_units(campaign, faction_id, fog_set)
+        vis_missions   = {m.id: m for m in visible_missions(campaign, faction_id, fog_set)}
+        units_save     = campaign.units
+        missions_save  = campaign.missions
+        campaign.units    = visible
+        campaign.missions = vis_missions
 
     # Draw into a sub-rect
     map_rect = pygame.Rect(0, header_h, width, height - header_h)
@@ -111,7 +115,9 @@ def export_view(
 
     # Restore
     if units_save is not None:
-        campaign.units = units_save
+        campaign.units    = units_save
+    if missions_save is not None:
+        campaign.missions = missions_save
 
     # Save
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in (faction_name.split("—")[0].strip()))
