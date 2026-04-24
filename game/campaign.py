@@ -88,6 +88,7 @@ def list_saves() -> list[Path]:
 def add_faction(campaign: Campaign, name: str, color: tuple, player_name: str = "") -> Faction:
     f = Faction.new(name, color, player_name)
     campaign.factions[f.id] = f
+    log_event(campaign, "faction_added", f"Faction added: {f.name}")
     return f
 
 
@@ -104,6 +105,7 @@ def add_unit(
     if vision_range is not None:
         u.vision_range = vision_range
     campaign.units[u.id] = u
+    log_event(campaign, "unit_added", f"Unit added: {u.name} [{u.unit_type}]")
     return u
 
 
@@ -115,9 +117,17 @@ def add_mission(
 ) -> Mission:
     m = Mission.new(name, mission_type, position, campaign.current_turn)
     campaign.missions[m.id] = m
+    log_event(campaign, "mission_created", f"Mission created: {m.name} ({m.mission_type})")
     return m
 
 
 def next_turn(campaign: Campaign) -> int:
     campaign.current_turn += 1
+    log_event(campaign, "turn_advanced", f"Turn advanced to {campaign.current_turn}")
     return campaign.current_turn
+
+
+def log_event(campaign: Campaign, event: str, detail: str) -> None:
+    campaign.event_log.append({"turn": campaign.current_turn, "event": event, "detail": detail})
+    if len(campaign.event_log) > 100:
+        campaign.event_log = campaign.event_log[-100:]

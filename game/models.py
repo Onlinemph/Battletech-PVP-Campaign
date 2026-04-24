@@ -150,6 +150,8 @@ class Campaign:
     op_maps:      Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
     # Tactical (mapsheet-level) sub-maps keyed by "stratQ,stratR|subQ,subR"
     tac_maps:     Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
+    # Turn/event history: list of {"turn": int, "event": str, "detail": str}
+    event_log:    List[Dict]                           = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -171,6 +173,7 @@ class Campaign:
                 mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
                 for mk, mv in self.tac_maps.items()
             },
+            "event_log":    list(self.event_log),
         }
         return d
 
@@ -199,4 +202,5 @@ class Campaign:
                 mk: parse_tmap(mv)
                 for mk, mv in d.get("tac_maps", {}).items()
             },
+            event_log    = d.get("event_log", []),
         )

@@ -17,7 +17,7 @@ from game.models import Campaign
 from game.terrain import terrain_name
 from game.campaign import (new_campaign, save_campaign, load_campaign, list_saves,
                             add_faction, add_unit, add_mission, next_turn,
-                            get_operational_map)
+                            get_operational_map, log_event)
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
 from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
@@ -25,7 +25,7 @@ from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
                         TOOLBAR_H, STATUSBAR_H, SIDEBAR_W)
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          AddMissionDialog, EditUnitDialog, LoadDialog,
-                         ExportDialog, ConfirmDialog)
+                         ExportDialog, ConfirmDialog, ResolveMissionDialog)
 from ui.export import export_view
 
 
@@ -280,6 +280,8 @@ class App:
                     u.tac_position = tac
                     detail = _fmt_coord(coord, sub, tac)
                     self._toast_msg(f"Moved {u.name} to {detail}")
+                    log_event(self.campaign, "unit_moved",
+                              f"{u.name} moved to ({coord[0]},{coord[1]})")
                 self.move_source_unit = None
 
         elif self.tool == "add_unit":
@@ -358,10 +360,10 @@ class App:
         elif box.name == "unit":
             self.selected_unit_id = box.data
         elif box.name == "mission":
-            # could pop up a mission editor; for now just note it
             m = self.campaign.missions.get(box.data)
             if m:
-                self._toast_msg(f"{m.mission_type}: {m.name}")
+                self.dialog = ResolveMissionDialog(
+                    (self.width, self.height), m, self.campaign.factions)
         elif box.name == "edit_unit":
             u = self.campaign.units.get(box.data)
             if u:
@@ -415,6 +417,17 @@ class App:
         elif isinstance(d, EditUnitDialog):
             self._toast_msg("Unit updated")
 
+        elif isinstance(d, ResolveMissionDialog):
+            r = d.result
+            m = d.mission
+            m.status                 = r["status"]
+            m.rewards                = r["rewards"]
+            m.notes                  = r["notes"]
+            m.participating_factions = r["participating_factions"]
+            log_event(self.campaign, "mission_resolved",
+                      f"'{m.name}' -> {m.status}")
+            self._toast_msg(f"Mission '{m.name}' updated: {m.status}")
+
         elif isinstance(d, ExportDialog):
             r = d.result
             path = export_view(self.campaign, r["faction_id"], r["width"], r["height"])
@@ -423,7 +436,9 @@ class App:
         elif isinstance(d, ConfirmDialog):
             uid = getattr(d, "_delete_unit_id", None)
             if d.result and uid and uid in self.campaign.units:
+                unit_name = self.campaign.units[uid].name
                 del self.campaign.units[uid]
+                log_event(self.campaign, "unit_deleted", f"Unit deleted: {unit_name}")
                 if self.selected_unit_id == uid:
                     self.selected_unit_id = None
                 self._toast_msg("Unit deleted")

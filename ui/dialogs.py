@@ -12,6 +12,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pygame
 
+from game.constants import MISSION_STATUSES
+from game.models import Mission, Faction
 from ui.colors import (BG, PANEL_BG, PANEL_DARK, BORDER, BORDER_LT,
                         BTN_NORMAL, BTN_HOVER, BTN_ACTIVE, BTN_DANGER,
                         BTN_TEXT, TEXT, TEXT_DIM, TEXT_BRIGHT,
@@ -692,3 +694,95 @@ class ConfirmDialog(Dialog):
         self.label(surface, self.message, self.rect.x + 20, self.rect.y + 55, bold=True)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
+
+
+# ── Resolve Mission dialog ────────────────────────────────────────────────────
+
+class ResolveMissionDialog(Dialog):
+    W, H = 520, 400
+
+    def __init__(self, screen_size: Tuple[int, int], mission: Mission,
+                 factions: Dict[str, Faction]):
+        super().__init__(f"Mission: {mission.name}", screen_size)
+        self.mission = mission
+        self._faction_ids   = list(factions.keys())
+        self._faction_names = [f.name for f in factions.values()]
+        self._selected_factions: set = set(mission.participating_factions)
+        self._faction_rects: List[pygame.Rect] = []
+
+        x, y = self.rect.x + 20, self.rect.y + 50
+        sel = MISSION_STATUSES.index(mission.status) if mission.status in MISSION_STATUSES else 0
+        self.dd_status   = DropDown(pygame.Rect(x + 90, y,       380, 28), MISSION_STATUSES, self.font, selected=sel)
+        self.inp_rewards = TextInput(pygame.Rect(x + 90, y + 38, 380, 26), self.font, value=mission.rewards)
+        self.inp_notes   = TextInput(pygame.Rect(x + 90, y + 76, 380, 26), self.font, value=mission.notes)
+
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Save",   self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_status.handle_event(event):
+            return
+        self.inp_rewards.handle_event(event)
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i, r in enumerate(self._faction_rects):
+                if r.collidepoint(event.pos):
+                    fid = self._faction_ids[i]
+                    if fid in self._selected_factions:
+                        self._selected_factions.discard(fid)
+                    else:
+                        self._selected_factions.add(fid)
+
+        if self.btn_cancel.clicked:
+            self.done = True
+            self.result = None
+        if self.btn_ok.clicked:
+            self.result = dict(
+                status                = self.dd_status.value,
+                rewards               = self.inp_rewards.value.strip(),
+                notes                 = self.inp_notes.value.strip(),
+                participating_factions= list(self._selected_factions),
+            )
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+
+        self.label(surface, "Status:",  x, y + 7)
+        self.label(surface, "Rewards:", x, y + 45)
+        self.label(surface, "Notes:",   x, y + 83)
+        self.label(surface, "Factions:", x, y + 121, bold=True)
+
+        self.dd_status.draw(surface)
+        self.inp_rewards.draw(surface)
+        self.inp_notes.draw(surface)
+
+        # Faction toggle grid (2 columns)
+        self._faction_rects = []
+        col_w = (self.rect.width - 40) // 2
+        fy = y + 138
+        mouse_pos = pygame.mouse.get_pos()
+        for i, (fid, fname) in enumerate(zip(self._faction_ids, self._faction_names)):
+            col = i % 2
+            row_i = i // 2
+            r = pygame.Rect(x + col * col_w, fy + row_i * 22, col_w - 4, 19)
+            self._faction_rects.append(r)
+            is_sel = fid in self._selected_factions
+            if is_sel:
+                bg = BTN_ACTIVE
+            elif r.collidepoint(mouse_pos):
+                bg = BTN_HOVER
+            else:
+                bg = BTN_NORMAL
+            pygame.draw.rect(surface, bg, r, border_radius=2)
+            pygame.draw.rect(surface, BORDER_LT, r, 1, border_radius=2)
+            surface.blit(self.font_sm.render(fname[:22], True, BTN_TEXT), (r.x + 4, r.y + 3))
+
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+        self.dd_status.draw_overlay(surface)

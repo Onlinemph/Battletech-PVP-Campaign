@@ -19,6 +19,27 @@ STATUSBAR_H = 26
 SIDEBAR_W   = 290
 
 
+def _mission_status_color(status: str) -> tuple:
+    return {
+        "active":    ( 40, 160, 255),
+        "completed": ( 60, 200,  80),
+        "failed":    (210,  50,  50),
+        "pending":   (200, 160,  40),
+    }.get(status, (120, 120, 130))
+
+
+def _event_icon(event: str) -> str:
+    return {
+        "turn_advanced":    ">>",
+        "faction_added":    "[F]",
+        "unit_added":       "[U]",
+        "unit_moved":       "~>",
+        "unit_deleted":     "[X]",
+        "mission_created":  "[M]",
+        "mission_resolved": "[R]",
+    }.get(event, "  ")
+
+
 class Hitbox:
     """Named clickable rectangle for toolbar/sidebar."""
     __slots__ = ("name", "rect", "data")
@@ -209,8 +230,10 @@ def draw_sidebar(
                 row = pygame.Rect(x + 14, cy, width - 28, 20)
                 bg = BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK
                 pygame.draw.rect(surface, bg, row, border_radius=2)
-                lbl = font_sm.render(f"{m.mission_type[:8]}: {m.name[:18]}", True, TEXT)
-                surface.blit(lbl, (row.x + 6, row.y + 4))
+                pygame.draw.rect(surface, _mission_status_color(m.status),
+                                 pygame.Rect(row.x + 2, row.y + 2, 4, 16), border_radius=1)
+                lbl = font_sm.render(f"{m.mission_type[:8]}: {m.name[:16]}", True, TEXT)
+                surface.blit(lbl, (row.x + 10, row.y + 4))
                 boxes.append(Hitbox("mission", row, m.id))
                 cy += 22
 
@@ -246,6 +269,22 @@ def draw_sidebar(
         surface.blit(font.render("Delete", True, BTN_TEXT), (del_rect.x + 18, del_rect.y + 4))
         boxes.append(Hitbox("delete_unit", del_rect, u.id))
         cy += 28
+
+    # ── Recent events ────────────────────────────────────────────────────────
+    pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+    surface.blit(font_h.render("RECENT EVENTS", True, TEXT_BRIGHT), (x + 12, cy)); cy += 20
+
+    recent = list(reversed(campaign.event_log[-8:]))
+    if not recent:
+        surface.blit(font_sm.render("(no events yet)", True, TEXT_DIM), (x + 12, cy))
+        cy += 16
+    else:
+        for entry in recent:
+            surface.blit(font_sm.render(f"T{entry['turn']}", True, TEXT_DIM), (x + 12, cy))
+            icon   = _event_icon(entry["event"])
+            detail = entry["detail"][:32]
+            surface.blit(font_sm.render(f"{icon} {detail}", True, TEXT), (x + 36, cy))
+            cy += 15
 
     return boxes
 
