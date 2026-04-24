@@ -1,0 +1,186 @@
+"""Data classes for all campaign entities."""
+import uuid
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+from game.constants import *
+
+
+def new_id() -> str:
+    return str(uuid.uuid4())[:8]
+
+
+# ── Roster ────────────────────────────────────────────────────────────────────
+
+@dataclass
+class RosterEntry:
+    chassis:  str           # e.g. "Atlas AS7-D"
+    pilot:    str           # pilot name
+    tonnage:  int = 0
+    status:   str = STATUS_ACTIVE
+    notes:    str = ""
+
+    def to_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RosterEntry":
+        return cls(**d)
+
+
+# ── Unit ──────────────────────────────────────────────────────────────────────
+
+@dataclass
+class Unit:
+    id:           str
+    name:         str
+    faction_id:   str
+    unit_type:    str                           # UNIT_* constant
+    status:       str = STATUS_ACTIVE
+    # Strategic position (axial q,r); None = off-map/reserve
+    position:     Optional[Tuple[int, int]] = None
+    vision_range: int  = 2                      # strategic hexes
+    roster:       List[RosterEntry] = field(default_factory=list)
+    notes:        str = ""
+
+    @classmethod
+    def new(cls, name: str, faction_id: str, unit_type: str) -> "Unit":
+        vision = DEFAULT_VISION.get(unit_type, 2)
+        return cls(id=new_id(), name=name, faction_id=faction_id,
+                   unit_type=unit_type, vision_range=vision)
+
+    def to_dict(self) -> dict:
+        d = self.__dict__.copy()
+        d["roster"] = [r.to_dict() for r in self.roster]
+        if d["position"] is not None:
+            d["position"] = list(d["position"])
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Unit":
+        d = d.copy()
+        d["roster"] = [RosterEntry.from_dict(r) for r in d.get("roster", [])]
+        if d.get("position") is not None:
+            d["position"] = tuple(d["position"])
+        return cls(**d)
+
+
+# ── Faction ───────────────────────────────────────────────────────────────────
+
+@dataclass
+class Faction:
+    id:          str
+    name:        str
+    color:       Tuple[int, int, int] = (180, 180, 180)
+    player_name: str = ""
+    resources:   int = 0                        # C-Bills / logistics points
+    notes:       str = ""
+
+    @classmethod
+    def new(cls, name: str, color: Tuple[int, int, int], player_name: str = "") -> "Faction":
+        return cls(id=new_id(), name=name, color=color, player_name=player_name)
+
+    def to_dict(self) -> dict:
+        d = self.__dict__.copy()
+        d["color"] = list(d["color"])
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Faction":
+        d = d.copy()
+        d["color"] = tuple(d["color"])
+        return cls(**d)
+
+
+# ── Mission ───────────────────────────────────────────────────────────────────
+
+@dataclass
+class Mission:
+    id:                    str
+    name:                  str
+    mission_type:          str
+    position:              Tuple[int, int]       # strategic hex (q, r)
+    status:                str = MISSION_ACTIVE
+    participating_factions: List[str] = field(default_factory=list)
+    objectives:            List[str] = field(default_factory=list)
+    rewards:               str = ""
+    notes:                 str = ""
+    turn_created:          int = 1
+    turn_deadline:         Optional[int] = None
+
+    @classmethod
+    def new(cls, name: str, mission_type: str, position: Tuple[int, int], turn: int = 1) -> "Mission":
+        return cls(id=new_id(), name=name, mission_type=mission_type,
+                   position=position, turn_created=turn)
+
+    def to_dict(self) -> dict:
+        d = self.__dict__.copy()
+        d["position"] = list(d["position"])
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Mission":
+        d = d.copy()
+        d["position"] = tuple(d["position"])
+        return cls(**d)
+
+
+# ── Campaign ──────────────────────────────────────────────────────────────────
+
+@dataclass
+class Campaign:
+    name:         str
+    current_turn: int                            = 1
+    map_width:    int                            = DEFAULT_MAP_WIDTH
+    map_height:   int                            = DEFAULT_MAP_HEIGHT
+    map_seed:     int                            = 0
+    terrain_map:  Dict[Tuple[int, int], str]     = field(default_factory=dict)
+    factions:     Dict[str, Faction]             = field(default_factory=dict)
+    units:        Dict[str, Unit]                = field(default_factory=dict)
+    missions:     Dict[str, Mission]             = field(default_factory=dict)
+    gm_notes:     str                            = ""
+
+    # Operational sub-maps cached by strategic hex key
+    op_maps:      Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        d: dict = {
+            "name":         self.name,
+            "current_turn": self.current_turn,
+            "map_width":    self.map_width,
+            "map_height":   self.map_height,
+            "map_seed":     self.map_seed,
+            "gm_notes":     self.gm_notes,
+            "terrain_map":  {f"{k[0]},{k[1]}": v for k, v in self.terrain_map.items()},
+            "factions":     {k: v.to_dict() for k, v in self.factions.items()},
+            "units":        {k: v.to_dict() for k, v in self.units.items()},
+            "missions":     {k: v.to_dict() for k, v in self.missions.items()},
+            "op_maps":      {
+                mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
+                for mk, mv in self.op_maps.items()
+            },
+        }
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Campaign":
+        def parse_tmap(raw: dict) -> Dict[Tuple[int, int], str]:
+            return {tuple(int(x) for x in k.split(",")): v  # type: ignore[return-value]
+                    for k, v in raw.items()}
+
+        return cls(
+            name         = d["name"],
+            current_turn = d.get("current_turn", 1),
+            map_width    = d.get("map_width",  DEFAULT_MAP_WIDTH),
+            map_height   = d.get("map_height", DEFAULT_MAP_HEIGHT),
+            map_seed     = d.get("map_seed", 0),
+            gm_notes     = d.get("gm_notes", ""),
+            terrain_map  = parse_tmap(d.get("terrain_map", {})),
+            factions     = {k: Faction.from_dict(v) for k, v in d.get("factions", {}).items()},
+            units        = {k: Unit.from_dict(v)    for k, v in d.get("units",    {}).items()},
+            missions     = {k: Mission.from_dict(v) for k, v in d.get("missions", {}).items()},
+            op_maps      = {
+                mk: parse_tmap(mv)
+                for mk, mv in d.get("op_maps", {}).items()
+            },
+        )
