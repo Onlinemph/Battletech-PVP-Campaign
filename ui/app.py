@@ -20,7 +20,7 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
                             get_operational_map)
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
-from ui.renderer import MapRenderer
+from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
 from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
                         TOOLBAR_H, STATUSBAR_H, SIDEBAR_W)
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
@@ -250,17 +250,17 @@ class App:
     def _on_map_click(self, pos: Tuple[int, int]) -> None:
         rect   = self._map_rect()
         ox, oy = rect.x + self.pan_x, rect.y + self.pan_y
-        h      = pixel_to_hex(pos[0], pos[1], self.hex_size, ox, oy)
-        coord  = h.to_tuple()
 
-        # Only accept clicks on hexes that exist in the current terrain map
+        # Capture all three levels when zoomed in enough
+        strat, sub, tac = pixel_to_hierarchical(pos[0], pos[1], self.hex_size, ox, oy)
+        coord  = strat.to_tuple()
+
         tmap = self._current_terrain_map()
         if coord not in tmap:
             return
 
         if self.tool == "select":
             self.selected_hex     = coord
-            # If a unit in this hex, select first one by default
             hex_units = [u for u in self.campaign.units.values() if u.position == coord] \
                         if self.scale == SCALE_STRATEGIC else []
             self.selected_unit_id = hex_units[0].id if hex_units else None
@@ -275,8 +275,11 @@ class App:
             else:
                 u = self.campaign.units.get(self.move_source_unit)
                 if u is not None:
-                    u.position = coord
-                    self._toast_msg(f"Moved {u.name} to {coord}")
+                    u.position     = coord
+                    u.sub_position = sub
+                    u.tac_position = tac
+                    detail = _fmt_coord(coord, sub, tac)
+                    self._toast_msg(f"Moved {u.name} to {detail}")
                 self.move_source_unit = None
 
         elif self.tool == "add_unit":
@@ -284,13 +287,15 @@ class App:
                 self._toast_msg("Add a faction first (+Faction).")
                 return
             faction_list = [(f.name, f.id) for f in self.campaign.factions.values()]
-            self.dialog = AddUnitDialog((self.width, self.height), faction_list, coord)
+            d = AddUnitDialog((self.width, self.height), faction_list, coord)
+            d._sub_pos = sub   # type: ignore[attr-defined]
+            d._tac_pos = tac   # type: ignore[attr-defined]
+            self.dialog = d
 
         elif self.tool == "add_mission":
             self.dialog = AddMissionDialog((self.width, self.height), coord)
 
         elif self.tool == "delete":
-            # Delete units in hex (strategic) or ignore (operational)
             if self.scale != SCALE_STRATEGIC:
                 return
             to_del = [uid for uid, u in self.campaign.units.items() if u.position == coord]
@@ -299,7 +304,6 @@ class App:
                     del self.campaign.units[uid]
                 self._toast_msg(f"Deleted {len(to_del)} unit(s)")
 
-        # Also set selected hex for info display
         self.selected_hex = coord
 
     def _current_terrain_map(self) -> dict:
@@ -396,9 +400,11 @@ class App:
             r = d.result
             u = add_unit(self.campaign, r["name"], r["faction_id"], r["unit_type"],
                          position=r["position"], vision_range=r["vision"])
-            u.notes = r.get("notes", "")
+            u.notes        = r.get("notes", "")
+            u.sub_position = getattr(d, "_sub_pos", None)
+            u.tac_position = getattr(d, "_tac_pos", None)
             self.selected_unit_id = u.id
-            self._toast_msg(f"Added unit: {u.name}")
+            self._toast_msg(f"Added unit: {u.name} at {_fmt_coord(u.position, u.sub_position, u.tac_position)}")
 
         elif isinstance(d, AddMissionDialog):
             r = d.result
@@ -528,3 +534,13 @@ class App:
         self.screen.blit(bg, bg_r.topleft)
         pygame.draw.rect(self.screen, (100, 100, 120, alpha), bg_r, 1, border_radius=3)
         self.screen.blit(surf, (bg_r.x + 12, bg_r.y + 7))
+
+
+def _fmt_coord(strat, sub, tac) -> str:
+    """Human-friendly rendering of a hierarchical coordinate."""
+    s = f"({strat[0]},{strat[1]})"
+    if sub is not None:
+        s += f" · sub({sub[0]},{sub[1]})"
+    if tac is not None:
+        s += f" · tile({tac[0]},{tac[1]})"
+    return s

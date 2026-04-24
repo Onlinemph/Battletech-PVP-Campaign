@@ -39,6 +39,10 @@ class Unit:
     status:       str = STATUS_ACTIVE
     # Strategic position (axial q,r); None = off-map/reserve
     position:     Optional[Tuple[int, int]] = None
+    # Low-altitude sub-hex (local axial, relative to the strategic hex)
+    sub_position: Optional[Tuple[int, int]] = None
+    # Mapsheet tile (local axial, relative to the low-altitude sub-hex)
+    tac_position: Optional[Tuple[int, int]] = None
     vision_range: int  = 2                      # strategic hexes
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
@@ -52,16 +56,18 @@ class Unit:
     def to_dict(self) -> dict:
         d = self.__dict__.copy()
         d["roster"] = [r.to_dict() for r in self.roster]
-        if d["position"] is not None:
-            d["position"] = list(d["position"])
+        for f in ("position", "sub_position", "tac_position"):
+            if d.get(f) is not None:
+                d[f] = list(d[f])
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Unit":
         d = d.copy()
         d["roster"] = [RosterEntry.from_dict(r) for r in d.get("roster", [])]
-        if d.get("position") is not None:
-            d["position"] = tuple(d["position"])
+        for f in ("position", "sub_position", "tac_position"):
+            if d.get(f) is not None:
+                d[f] = tuple(d[f])
         return cls(**d)
 
 

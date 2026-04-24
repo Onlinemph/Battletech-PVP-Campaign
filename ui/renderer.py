@@ -34,17 +34,74 @@ SUBHEX_ZOOM_THRESHOLD  = 65
 # the 19 mapsheet tiles inside each low-altitude sub-hex.
 TACTICAL_ZOOM_THRESHOLD = 200
 
-# Sub-hex radius as a fraction of parent strategic hex radius
-# (≈ sqrt(1/36) — 36 equal-area sub-hexes would have r = R/6)
-SUBHEX_RATIO = 1.0 / 6.08
+# Sub-hex radius as a fraction of parent hex radius. Tuned so the full
+# radius-3 cluster fits CLEANLY inside the parent hex (geometry: furthest
+# corner of the outermost sub-hex is at 6.083*r from center; must be ≤
+# parent_edge_distance = R*sqrt(3)/2 ≈ 0.866R).
+#   0.866 / 6.083 ≈ 0.1424  →  R/7.02.  Use 1/7.1 for a small margin.
+SUBHEX_RATIO = 1.0 / 7.1
 
-# Mapsheet (tactical) radius as fraction of low-altitude sub-hex radius
-# (≈ sqrt(1/18) for the ~19-tile cluster)
-TACTICAL_RATIO = 1.0 / 4.24
+# Mapsheet radius as fraction of low-altitude sub-hex radius. Similar
+# geometry for radius-2 cluster: outer corner at 4.359*r, must be ≤
+# 0.866*R_sub.  0.866/4.359 ≈ 0.1988  →  R_sub/5.03.  Use 1/5.1 margin.
+TACTICAL_RATIO = 1.0 / 5.1
 
 # Faint outlines at each level
 STRAT_GUIDE  = (200, 200, 120)   # strategic hex boundary (yellow)
 SUBHEX_GUIDE = (120, 200, 220)   # low-altitude hex boundary (cyan)
+
+
+# ── Hierarchical coordinate helpers (module-level) ────────────────────────────
+
+def pixel_to_hierarchical(px: float, py: float, hex_size: float,
+                          ox: float, oy: float):
+    """
+    Convert a pixel to (strategic_hex, sub_hex_or_None, tac_hex_or_None).
+    Returns sub/tac only at the zoom levels where they're relevant.
+    Returns None for levels the click isn't precise enough for.
+    """
+    from game.hex_grid import pixel_to_hex, hex_to_pixel, Hex, hex_distance
+    from game.constants import OPERATIONAL_RADIUS, TACTICAL_RADIUS
+
+    strat = pixel_to_hex(px, py, hex_size, ox, oy)
+    if hex_size < SUBHEX_ZOOM_THRESHOLD:
+        return strat, None, None
+
+    sub_size = hex_size * SUBHEX_RATIO
+    scx, scy = hex_to_pixel(strat, hex_size, ox, oy)
+    dx, dy   = px - scx, py - scy
+    sub = pixel_to_hex(dx, dy, sub_size, 0, 0)
+    if hex_distance(Hex(0, 0), sub) > OPERATIONAL_RADIUS:
+        return strat, None, None
+
+    if hex_size < TACTICAL_ZOOM_THRESHOLD:
+        return strat, sub.to_tuple(), None
+
+    tac_size  = sub_size * TACTICAL_RATIO
+    sub_cx, sub_cy = hex_to_pixel(sub, sub_size, 0, 0)
+    ddx, ddy  = dx - sub_cx, dy - sub_cy
+    tac = pixel_to_hex(ddx, ddy, tac_size, 0, 0)
+    if hex_distance(Hex(0, 0), tac) > TACTICAL_RADIUS:
+        return strat, sub.to_tuple(), None
+
+    return strat, sub.to_tuple(), tac.to_tuple()
+
+
+def hierarchical_offset(sub_pos, tac_pos, hex_size: float):
+    """
+    Return (dx, dy) offset from a strategic hex's center to the given
+    sub/tac position, honoring the current zoom level.
+    """
+    from game.hex_grid import hex_to_pixel, Hex
+    if sub_pos is None or hex_size < SUBHEX_ZOOM_THRESHOLD:
+        return 0.0, 0.0
+    sub_size = hex_size * SUBHEX_RATIO
+    sx, sy   = hex_to_pixel(Hex.from_tuple(sub_pos), sub_size, 0, 0)
+    if tac_pos is None or hex_size < TACTICAL_ZOOM_THRESHOLD:
+        return sx, sy
+    tac_size = sub_size * TACTICAL_RATIO
+    tx, ty   = hex_to_pixel(Hex.from_tuple(tac_pos), tac_size, 0, 0)
+    return sx + tx, sy + ty
 
 # Status border colors
 STATUS_COLORS = {
@@ -334,26 +391,40 @@ class MapRenderer:
     def _draw_units(self, h: Hex, units: list) -> None:
         key = h.to_tuple()
         is_fog = (self.fog_set is not None and key not in self.fog_set)
-        cx, cy = self.hex_center(h)
-        n      = len(units)
-        radius = max(4, int(self.hex_size * 0.32))
+        pcx, pcy = self.hex_center(h)
 
-        # Offset multiple units within the hex
-        offsets = _unit_offsets(n, self.hex_size * 0.38)
+        # Group units by where they actually render at the current zoom so
+        # they stack cleanly even if they share a strategic hex but differ in
+        # sub/tac position.
+        groups: Dict[Tuple[float, float], list] = {}
+        for u in units:
+            dx, dy = hierarchical_offset(u.sub_position, u.tac_position, self.hex_size)
+            # Quantize so nearly-coincident offsets group together
+            cx = pcx + dx
+            cy = pcy + dy
+            key_px = (round(cx), round(cy))
+            groups.setdefault(key_px, []).append(u)
 
-        for i, unit in enumerate(units):
-            ux = cx + offsets[i][0]
-            uy = cy + offsets[i][1]
+        # Smaller unit radius when sub-hexes are showing (to fit inside them)
+        if self.hex_size >= TACTICAL_ZOOM_THRESHOLD:
+            radius = max(4, int(self.hex_size * SUBHEX_RATIO * TACTICAL_RATIO * 0.85))
+        elif self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
+            radius = max(4, int(self.hex_size * SUBHEX_RATIO * 0.55))
+        else:
+            radius = max(4, int(self.hex_size * 0.32))
 
-            faction = self.campaign.factions.get(unit.faction_id)
-            fc      = tuple(faction.color) if faction else (150, 150, 150)
-
-            # Own units always shown; enemy units shown in fog as well (GM view)
-            # Caller should filter units list if applying fog; we just draw what we get
-            status_border = STATUS_COLORS.get(unit.status, (255, 255, 255))
-            _draw_unit_circle(self.surface, (ux, uy), radius, fc, status_border,
-                              UNIT_LABEL.get(unit.unit_type, "?"), self._font_sm,
-                              unit.status == STATUS_DESTROYED)
+        for (gx, gy), g_units in groups.items():
+            n = len(g_units)
+            offsets = _unit_offsets(n, radius * 1.4)
+            for i, unit in enumerate(g_units):
+                ux = gx + offsets[i][0]
+                uy = gy + offsets[i][1]
+                faction = self.campaign.factions.get(unit.faction_id)
+                fc = tuple(faction.color) if faction else (150, 150, 150)
+                status_border = STATUS_COLORS.get(unit.status, (255, 255, 255))
+                _draw_unit_circle(self.surface, (ux, uy), radius, fc, status_border,
+                                  UNIT_LABEL.get(unit.unit_type, "?"), self._font_sm,
+                                  unit.status == STATUS_DESTROYED)
 
     # ── export surface ────────────────────────────────────────────────────────
 
