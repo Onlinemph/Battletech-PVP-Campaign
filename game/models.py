@@ -44,6 +44,7 @@ class Unit:
     # Mapsheet tile (local axial, relative to the low-altitude sub-hex)
     tac_position: Optional[Tuple[int, int]] = None
     vision_range: int  = 2                      # strategic hexes
+    repair_cost:  int  = 0                      # C-Bills to restore to active
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
 

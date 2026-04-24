@@ -25,7 +25,8 @@ from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
                         TOOLBAR_H, STATUSBAR_H, SIDEBAR_W)
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          AddMissionDialog, EditUnitDialog, LoadDialog,
-                         ExportDialog, ConfirmDialog, ResolveMissionDialog)
+                         ExportDialog, ConfirmDialog, ResolveMissionDialog,
+                         AdjustFundsDialog)
 from ui.export import export_view
 
 
@@ -369,9 +370,26 @@ class App:
             if u:
                 self.dialog = EditUnitDialog((self.width, self.height), u)
         elif box.name == "delete_unit":
-            self.dialog = ConfirmDialog((self.width, self.height),
-                                         "Delete this unit?")
+            self.dialog = ConfirmDialog((self.width, self.height), "Delete this unit?")
             self.dialog._delete_unit_id = box.data  # type: ignore[attr-defined]
+        elif box.name == "adjust_funds":
+            f = self.campaign.factions.get(box.data)
+            if f:
+                self.dialog = AdjustFundsDialog((self.width, self.height), f.name, f.resources)
+                self.dialog._faction_id = box.data  # type: ignore[attr-defined]
+        elif box.name == "pay_repair":
+            u = self.campaign.units.get(box.data)
+            if u:
+                f = self.campaign.factions.get(u.faction_id)
+                if f and f.resources >= u.repair_cost:
+                    f.resources -= u.repair_cost
+                    u.status = "active"
+                    log_event(self.campaign, "unit_repaired",
+                              f"{u.name} repaired ({u.repair_cost:,} C-Bills)")
+                    self._toast_msg(f"{u.name} repaired — {u.repair_cost:,} C-Bills deducted")
+                    u.repair_cost = 0
+                elif f:
+                    self._toast_msg(f"Insufficient funds: need {u.repair_cost:,}, have {f.resources:,}")
 
     # ── dialog completion ────────────────────────────────────────────────────
 
@@ -427,6 +445,18 @@ class App:
             log_event(self.campaign, "mission_resolved",
                       f"'{m.name}' -> {m.status}")
             self._toast_msg(f"Mission '{m.name}' updated: {m.status}")
+
+        elif isinstance(d, AdjustFundsDialog):
+            fid = getattr(d, "_faction_id", None)
+            f   = self.campaign.factions.get(fid) if fid else None
+            if f:
+                r = d.result
+                f.resources += r["delta"]
+                verb   = "added to" if r["delta"] >= 0 else "deducted from"
+                reason = f" ({r['reason']})" if r["reason"] else ""
+                log_event(self.campaign, "funds_adjusted",
+                          f"{abs(r['delta']):,} C-Bills {verb} {f.name}{reason}")
+                self._toast_msg(f"{f.name}: {f.resources:,} C-Bills")
 
         elif isinstance(d, ExportDialog):
             r = d.result

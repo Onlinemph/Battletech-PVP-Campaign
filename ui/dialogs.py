@@ -464,7 +464,7 @@ class AddMissionDialog(Dialog):
 # ── Edit Unit dialog ───────────────────────────────────────────────────────────
 
 class EditUnitDialog(Dialog):
-    W, H = 560, 460
+    W, H = 560, 500
 
     def __init__(self, screen_size: Tuple[int, int], unit):
         super().__init__(f"Edit Unit: {unit.name}", screen_size)
@@ -472,11 +472,13 @@ class EditUnitDialog(Dialog):
         self.unit = unit
 
         from game.constants import UNIT_STATUSES
-        self.inp_name   = TextInput(pygame.Rect(x + 130, y,       370, 28), self.font, value=unit.name)
-        self.dd_status  = DropDown( pygame.Rect(x + 130, y + 38,  200, 28), UNIT_STATUSES, self.font,
-                                    selected=UNIT_STATUSES.index(unit.status) if unit.status in UNIT_STATUSES else 0)
-        self.inp_vision = TextInput(pygame.Rect(x + 130, y + 76,   80, 28), self.font, value=str(unit.vision_range))
-        self.inp_notes  = TextInput(pygame.Rect(x + 130, y + 114, 370, 28), self.font, value=unit.notes)
+        self.inp_name        = TextInput(pygame.Rect(x + 140, y,        370, 28), self.font, value=unit.name)
+        self.dd_status       = DropDown( pygame.Rect(x + 140, y + 38,   200, 28), UNIT_STATUSES, self.font,
+                                         selected=UNIT_STATUSES.index(unit.status) if unit.status in UNIT_STATUSES else 0)
+        self.inp_repair_cost = TextInput(pygame.Rect(x + 140, y + 76,   130, 28), self.font,
+                                         placeholder="0", value=str(unit.repair_cost) if unit.repair_cost else "")
+        self.inp_vision      = TextInput(pygame.Rect(x + 140, y + 114,   80, 28), self.font, value=str(unit.vision_range))
+        self.inp_notes       = TextInput(pygame.Rect(x + 140, y + 152,  370, 28), self.font, value=unit.notes)
 
         # Roster section
         self.roster_entries: List[Dict] = [
@@ -485,16 +487,17 @@ class EditUnitDialog(Dialog):
             for r in unit.roster
         ]
         self._roster_scroll = 0
-        self.roster_rect    = pygame.Rect(self.rect.x + 10, y + 160, self.rect.width - 20, 180)
+        self.roster_rect    = pygame.Rect(self.rect.x + 10, y + 200, self.rect.width - 20, 170)
 
         btn_y = self.rect.bottom - 48
-        self.btn_ok       = Button(pygame.Rect(self.rect.right - 320, btn_y, 100, 32), "Save",     self.font)
-        self.btn_roster   = Button(pygame.Rect(self.rect.right - 210, btn_y, 100, 32), "+Mech",    self.font)
-        self.btn_cancel   = Button(pygame.Rect(self.rect.right - 100, btn_y,  90, 32), "Cancel",   self.font, danger=True)
+        self.btn_ok       = Button(pygame.Rect(self.rect.right - 320, btn_y, 100, 32), "Save",   self.font)
+        self.btn_roster   = Button(pygame.Rect(self.rect.right - 210, btn_y, 100, 32), "+Mech",  self.font)
+        self.btn_cancel   = Button(pygame.Rect(self.rect.right - 100, btn_y,  90, 32), "Cancel", self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if self.dd_status.handle_event(event): return
         self.inp_name.handle_event(event)
+        self.inp_repair_cost.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -514,6 +517,7 @@ class EditUnitDialog(Dialog):
             try:
                 self.unit.name         = self.inp_name.value.strip() or self.unit.name
                 self.unit.status       = self.dd_status.value
+                self.unit.repair_cost  = int(self.inp_repair_cost.value or 0)
                 self.unit.vision_range = int(self.inp_vision.value or 2)
                 self.unit.notes        = self.inp_notes.value.strip()
                 self.unit.roster = [
@@ -533,17 +537,19 @@ class EditUnitDialog(Dialog):
     def draw(self, surface: pygame.Surface) -> None:
         self._draw_frame(surface)
         x, y = self.rect.x + 20, self.rect.y + 50
-        self.label(surface, "Unit Name:", x, y + 7)
-        self.label(surface, "Status:",    x, y + 45)
-        self.label(surface, "Vision:",    x, y + 83)
-        self.label(surface, "Notes:",     x, y + 121)
+        self.label(surface, "Unit Name:",        x, y + 7)
+        self.label(surface, "Status:",           x, y + 45)
+        self.label(surface, "Repair Cost (C-Bills):", x, y + 83)
+        self.label(surface, "Vision:",           x, y + 121)
+        self.label(surface, "Notes:",            x, y + 159)
         self.inp_name.draw(surface)
         self.dd_status.draw(surface)
+        self.inp_repair_cost.draw(surface)
         self.inp_vision.draw(surface)
         self.inp_notes.draw(surface)
 
         # Roster
-        self.label(surface, "Roster:", x, y + 160, bold=True)
+        self.label(surface, "Roster:", x, y + 200, bold=True)
         pygame.draw.rect(surface, PANEL_DARK, self.roster_rect, border_radius=3)
         pygame.draw.rect(surface, BORDER, self.roster_rect, 1, border_radius=3)
 
@@ -786,3 +792,53 @@ class ResolveMissionDialog(Dialog):
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
         self.dd_status.draw_overlay(surface)
+
+
+# ── Adjust Faction Funds dialog ───────────────────────────────────────────────
+
+class AdjustFundsDialog(Dialog):
+    W, H = 420, 220
+
+    def __init__(self, screen_size: Tuple[int, int], faction_name: str, current: int):
+        super().__init__(f"Adjust Funds: {faction_name}", screen_size)
+        self.current = current
+        x, y = self.rect.x + 20, self.rect.y + 50
+
+        self.inp_amount = TextInput(pygame.Rect(x + 140, y,      220, 28), self.font,
+                                    placeholder="e.g. 5000 or -2000")
+        self.inp_reason = TextInput(pygame.Rect(x + 140, y + 38, 240, 28), self.font,
+                                    placeholder="optional note")
+
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y,  90, 32), "Apply",  self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y,  90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        self.inp_amount.handle_event(event)
+        self.inp_reason.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+
+        if self.btn_ok.clicked:
+            try:
+                delta = int(self.inp_amount.value.replace(",", "").replace(" ", "") or 0)
+            except ValueError:
+                return
+            self.result = dict(delta=delta, reason=self.inp_reason.value.strip())
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, f"Current: {self.current:,} C-Bills", x, y - 14, color=(140, 200, 140))
+        self.label(surface, "Amount:",  x, y + 7)
+        self.label(surface, "Reason:",  x, y + 45)
+        self.label(surface, "(use negative to deduct)", x + 140, y + 60,
+                   color=(120, 120, 130))
+        self.inp_amount.draw(surface)
+        self.inp_reason.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)

@@ -11,8 +11,8 @@ from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
 from ui.colors import (BG, PANEL_BG, PANEL_DARK, BORDER, BORDER_LT,
-                        BTN_NORMAL, BTN_HOVER, BTN_ACTIVE, BTN_TEXT,
-                        TEXT, TEXT_DIM, TEXT_BRIGHT, TEXT_WARN, TEXT_BAD)
+                        BTN_NORMAL, BTN_HOVER, BTN_ACTIVE, BTN_DANGER, BTN_TEXT,
+                        TEXT, TEXT_DIM, TEXT_BRIGHT, TEXT_WARN, TEXT_BAD, TEXT_GOOD)
 
 TOOLBAR_H   = 46
 STATUSBAR_H = 26
@@ -35,8 +35,10 @@ def _event_icon(event: str) -> str:
         "unit_added":       "[U]",
         "unit_moved":       "~>",
         "unit_deleted":     "[X]",
+        "unit_repaired":    "[W]",
         "mission_created":  "[M]",
         "mission_resolved": "[R]",
+        "funds_adjusted":   "[$]",
     }.get(event, "  ")
 
 
@@ -166,16 +168,25 @@ def draw_sidebar(
     for f in campaign.factions.values():
         row = pygame.Rect(x + 8, cy, width - 16, 24)
         is_active = active_faction_filter == f.id
-        bg = BTN_ACTIVE if is_active else (PANEL_DARK if row.collidepoint(hover_pos) else PANEL_DARK)
-        if not is_active and row.collidepoint(hover_pos):
-            bg = BTN_HOVER
+        bg = BTN_ACTIVE if is_active else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
         pygame.draw.rect(surface, bg, row, border_radius=3)
         pygame.draw.rect(surface, f.color, (row.x + 4, row.y + 4, 14, 16), border_radius=2)
         n_units = sum(1 for u in campaign.units.values() if u.faction_id == f.id)
-        lbl = font.render(f"{f.name[:20]:20} [{n_units}]", True, TEXT)
+        lbl = font.render(f"{f.name[:16]:16} [{n_units}]", True, TEXT)
         surface.blit(lbl, (row.x + 24, row.y + 6))
         boxes.append(Hitbox("faction", row, f.id))
         cy += 26
+
+        # Resources line with adjust button
+        res_color = TEXT_GOOD if f.resources >= 0 else TEXT_BAD
+        surface.blit(font_sm.render(f"  C-Bills: {f.resources:,}", True, res_color), (x + 24, cy + 1))
+        adj_rect = pygame.Rect(x + width - 52, cy, 44, 15)
+        adj_bg = BTN_HOVER if adj_rect.collidepoint(hover_pos) else BTN_NORMAL
+        pygame.draw.rect(surface, adj_bg, adj_rect, border_radius=2)
+        surface.blit(font_sm.render("[+/-]", True, BTN_TEXT), (adj_rect.x + 2, adj_rect.y + 1))
+        boxes.append(Hitbox("adjust_funds", adj_rect, f.id))
+        cy += 18
+
     if not campaign.factions:
         surface.blit(font_sm.render("(none yet — click +Faction)", True, TEXT_DIM), (x + 12, cy))
         cy += 18
@@ -249,12 +260,21 @@ def draw_sidebar(
         surface.blit(font_sm.render(f"Type: {u.unit_type}", True, TEXT), (x + 12, cy)); cy += 14
         if faction:
             surface.blit(font_sm.render(f"Faction: {faction.name}", True, TEXT), (x + 12, cy)); cy += 14
+        from game.constants import STATUS_REPAIRING
         status_color = TEXT_WARN if u.status != "active" else TEXT
         surface.blit(font_sm.render(f"Status: {u.status}", True, status_color), (x + 12, cy)); cy += 14
+        if u.status == STATUS_REPAIRING and u.repair_cost:
+            faction_res = campaign.factions[u.faction_id].resources if u.faction_id in campaign.factions else 0
+            can_afford  = faction_res >= u.repair_cost
+            cost_color  = TEXT_GOOD if can_afford else TEXT_BAD
+            surface.blit(font_sm.render(f"Repair cost: {u.repair_cost:,} C-Bills", True, cost_color),
+                         (x + 12, cy)); cy += 14
+            surface.blit(font_sm.render(f"Faction has: {faction_res:,} C-Bills", True, TEXT_DIM),
+                         (x + 12, cy)); cy += 14
         surface.blit(font_sm.render(f"Vision: {u.vision_range} hex", True, TEXT), (x + 12, cy)); cy += 14
         surface.blit(font_sm.render(f"Roster: {len(u.roster)} element(s)", True, TEXT), (x + 12, cy)); cy += 16
 
-        # Edit button
+        # Edit / Delete / Pay & Repair buttons
         edit_rect = pygame.Rect(x + 12, cy, 80, 22)
         bg = BTN_HOVER if edit_rect.collidepoint(hover_pos) else BTN_NORMAL
         pygame.draw.rect(surface, bg, edit_rect, border_radius=3)
@@ -268,6 +288,18 @@ def draw_sidebar(
         pygame.draw.rect(surface, BORDER_LT, del_rect, 1, border_radius=3)
         surface.blit(font.render("Delete", True, BTN_TEXT), (del_rect.x + 18, del_rect.y + 4))
         boxes.append(Hitbox("delete_unit", del_rect, u.id))
+
+        if u.status == STATUS_REPAIRING:
+            repair_rect = pygame.Rect(x + 12, cy + 28, 130, 22)
+            faction_res = campaign.factions[u.faction_id].resources if u.faction_id in campaign.factions else 0
+            can_afford  = faction_res >= u.repair_cost
+            rep_bg = BTN_HOVER if repair_rect.collidepoint(hover_pos) else (BTN_ACTIVE if can_afford else BTN_DANGER)
+            pygame.draw.rect(surface, rep_bg, repair_rect, border_radius=3)
+            pygame.draw.rect(surface, BORDER_LT, repair_rect, 1, border_radius=3)
+            surface.blit(font_sm.render("Pay & Repair", True, BTN_TEXT), (repair_rect.x + 8, repair_rect.y + 5))
+            boxes.append(Hitbox("pay_repair", repair_rect, u.id))
+            cy += 28
+
         cy += 28
 
     # ── Recent events ────────────────────────────────────────────────────────
