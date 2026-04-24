@@ -275,7 +275,11 @@ def draw_statusbar(
     if scale == SCALE_OPERATIONAL and op_hex:
         parts.append(f"Operational view of strat hex ({op_hex[0]},{op_hex[1]})")
     else:
-        parts.append(f"Strategic  (each hex = {HIGH_ALT_HEX_SIZE_M/1000:.0f} km)")
+        from ui.renderer import SUBHEX_ZOOM_THRESHOLD
+        if hex_size >= SUBHEX_ZOOM_THRESHOLD:
+            parts.append(f"Strategic + sub-hexes (each sub = {LOW_ALT_HEX_SIZE_M/1000:.1f} km)")
+        else:
+            parts.append(f"Strategic  (each hex = {HIGH_ALT_HEX_SIZE_M/1000:.0f} km)")
     parts.append(f"Tool: {tool}")
 
     txt = "  |  ".join(parts)

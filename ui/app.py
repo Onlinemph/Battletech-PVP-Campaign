@@ -29,7 +29,7 @@ from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
 from ui.export import export_view
 
 
-ZOOM_LEVELS = [8, 12, 18, 26, 38, 55, 80]
+ZOOM_LEVELS = [8, 12, 18, 26, 38, 55, 80, 120, 180, 260]
 
 
 class App:
