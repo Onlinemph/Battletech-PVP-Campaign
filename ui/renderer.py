@@ -28,15 +28,23 @@ UNIT_LABEL = {
 
 # When the strategic hex reaches this pixel radius, switch to drawing
 # its 37-hex low-altitude sub-grid inline (seamless zoom).
-SUBHEX_ZOOM_THRESHOLD = 65
+SUBHEX_ZOOM_THRESHOLD  = 65
+
+# When the strategic hex reaches this, recurse one more level and draw
+# the 19 mapsheet tiles inside each low-altitude sub-hex.
+TACTICAL_ZOOM_THRESHOLD = 200
 
 # Sub-hex radius as a fraction of parent strategic hex radius
 # (≈ sqrt(1/36) — 36 equal-area sub-hexes would have r = R/6)
 SUBHEX_RATIO = 1.0 / 6.08
 
-# Faint outline used to show where strategic hex boundaries sit when we've
-# zoomed in to the sub-hex level.
-STRAT_GUIDE = (200, 200, 120)
+# Mapsheet (tactical) radius as fraction of low-altitude sub-hex radius
+# (≈ sqrt(1/18) for the ~19-tile cluster)
+TACTICAL_RATIO = 1.0 / 4.24
+
+# Faint outlines at each level
+STRAT_GUIDE  = (200, 200, 120)   # strategic hex boundary (yellow)
+SUBHEX_GUIDE = (120, 200, 220)   # low-altitude hex boundary (cyan)
 
 # Status border colors
 STATUS_COLORS = {
@@ -206,7 +214,9 @@ class MapRenderer:
     # ── per-hex drawing ───────────────────────────────────────────────────────
 
     def _draw_subhexes(self, parent: Hex, parent_terrain: str) -> None:
-        """Render the 37 low-altitude sub-hexes that make up a strategic hex."""
+        """Render the 37 low-altitude sub-hexes that make up a strategic hex.
+        If zoomed in even further, each sub-hex recursively shows its 19
+        mapsheet-level tiles."""
         from game.campaign import get_operational_map
         sub_tmap = get_operational_map(self.campaign, parent.to_tuple())
 
@@ -218,21 +228,63 @@ class MapRenderer:
         key_parent = parent.to_tuple()
         is_fog = (self.fog_set is not None and key_parent not in self.fog_set)
 
+        show_tactical = self.hex_size >= TACTICAL_ZOOM_THRESHOLD
         border_col = (45, 45, 55)
+
         for (sq, sr), terrain in sub_tmap.items():
             # Local axial → pixel offset (flat-top)
             dx = sub_r * 1.5 * sq
             dy = sub_r * (sqrt3_2 * sq + sqrt3 * sr)
             cx = pcx + dx
             cy = pcy + dy
+
+            if show_tactical and not is_fog:
+                # Recurse: draw the 19 mapsheet tiles inside this sub-hex
+                self._draw_mapsheets(parent.to_tuple(), (sq, sr),
+                                     cx, cy, sub_r, terrain)
+                # Cyan guide line around the low-alt sub-hex
+                corners = [
+                    (cx + sub_r * math.cos(math.pi / 3 * i),
+                     cy + sub_r * math.sin(math.pi / 3 * i))
+                    for i in range(6)
+                ]
+                pygame.draw.polygon(self.surface, SUBHEX_GUIDE, corners, 2)
+            else:
+                corners = [
+                    (cx + sub_r * math.cos(math.pi / 3 * i),
+                     cy + sub_r * math.sin(math.pi / 3 * i))
+                    for i in range(6)
+                ]
+                color = FOG if is_fog else terrain_color(terrain)
+                pygame.draw.polygon(self.surface, color, corners)
+                if sub_r >= 4:
+                    pygame.draw.polygon(self.surface, border_col, corners, 1)
+
+    def _draw_mapsheets(self, strategic_hex: Tuple[int, int],
+                        sub_hex:       Tuple[int, int],
+                        scx: float, scy: float,
+                        sub_r: float, parent_terrain: str) -> None:
+        """Render the 19 mapsheet-level tiles inside one low-altitude sub-hex."""
+        from game.campaign import get_tactical_map
+        tac_tmap = get_tactical_map(self.campaign, strategic_hex, sub_hex)
+
+        tac_r  = max(1.5, sub_r * TACTICAL_RATIO)
+        sqrt3   = math.sqrt(3)
+        sqrt3_2 = sqrt3 * 0.5
+        border_col = (30, 30, 35)
+
+        for (tq, tr), terrain in tac_tmap.items():
+            dx = tac_r * 1.5 * tq
+            dy = tac_r * (sqrt3_2 * tq + sqrt3 * tr)
+            cx = scx + dx
+            cy = scy + dy
             corners = [
-                (cx + sub_r * math.cos(math.pi / 3 * i),
-                 cy + sub_r * math.sin(math.pi / 3 * i))
+                (cx + tac_r * math.cos(math.pi / 3 * i),
+                 cy + tac_r * math.sin(math.pi / 3 * i))
                 for i in range(6)
             ]
-            color = FOG if is_fog else terrain_color(terrain)
-            pygame.draw.polygon(self.surface, color, corners)
-            if sub_r >= 4:
+            pygame.draw.polygon(self.surface, terrain_color(terrain), corners)
+            if tac_r >= 3:
                 pygame.draw.polygon(self.surface, border_col, corners, 1)
 
     def _draw_hex_fill(self, h: Hex, terrain: str) -> None:

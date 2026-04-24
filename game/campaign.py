@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from game.constants import DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT
-from game.map_gen import generate_map, generate_operational_map
+from game.map_gen import generate_map, generate_operational_map, generate_tactical_map
 from game.models import Campaign, Faction, Unit, Mission, new_id
 from game.constants import *
 
@@ -47,6 +47,18 @@ def get_operational_map(campaign: Campaign, strategic_hex: tuple) -> dict:
             parent_terrain, strategic_hex, campaign.map_seed
         )
     return campaign.op_maps[key]
+
+
+def get_tactical_map(campaign: Campaign, strategic_hex: tuple, sub_hex: tuple) -> dict:
+    """Return (or generate and cache) the mapsheet-level sub-map for one low-alt hex."""
+    key = f"{strategic_hex[0]},{strategic_hex[1]}|{sub_hex[0]},{sub_hex[1]}"
+    if key not in campaign.tac_maps:
+        op_map = get_operational_map(campaign, strategic_hex)
+        parent_terrain = op_map.get(sub_hex, TERRAIN_PLAINS)
+        campaign.tac_maps[key] = generate_tactical_map(
+            parent_terrain, key, campaign.map_seed
+        )
+    return campaign.tac_maps[key]
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

@@ -140,8 +140,10 @@ class Campaign:
     missions:     Dict[str, Mission]             = field(default_factory=dict)
     gm_notes:     str                            = ""
 
-    # Operational sub-maps cached by strategic hex key
+    # Operational sub-maps cached by strategic hex key "q,r"
     op_maps:      Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
+    # Tactical (mapsheet-level) sub-maps keyed by "stratQ,stratR|subQ,subR"
+    tac_maps:     Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -158,6 +160,10 @@ class Campaign:
             "op_maps":      {
                 mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
                 for mk, mv in self.op_maps.items()
+            },
+            "tac_maps":     {
+                mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
+                for mk, mv in self.tac_maps.items()
             },
         }
         return d
@@ -182,5 +188,9 @@ class Campaign:
             op_maps      = {
                 mk: parse_tmap(mv)
                 for mk, mv in d.get("op_maps", {}).items()
+            },
+            tac_maps     = {
+                mk: parse_tmap(mv)
+                for mk, mv in d.get("tac_maps", {}).items()
             },
         )

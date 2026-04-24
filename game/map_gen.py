@@ -136,6 +136,54 @@ def generate_map(
     return terrain_map
 
 
+def generate_tactical_map(
+    parent_terrain: str,
+    composite_key:  str,
+    seed_base:      int,
+) -> TerrainMap:
+    """
+    Generate the 19-hex mapsheet-level tile grid for one low-altitude sub-hex.
+    Each tile ≈ one Battletech mapsheet (500m).
+    """
+    from game.hex_grid import hex_range
+    from game.constants import TACTICAL_RADIUS
+    seed = seed_base ^ (hash(composite_key) & 0xFFFFFF)
+    rng  = random.Random(seed)
+    hexes = hex_range(Hex(0, 0), TACTICAL_RADIUS)
+
+    water_like    = parent_terrain in (TERRAIN_DEEP_WATER, TERRAIN_WATER, TERRAIN_COAST)
+    mountain_like = parent_terrain in (TERRAIN_MOUNTAINS, TERRAIN_VOLCANIC)
+
+    result: TerrainMap = {}
+    for h in hexes:
+        r = rng.random()
+        if water_like:
+            t = TERRAIN_WATER if r < 0.75 else TERRAIN_COAST
+        elif mountain_like:
+            t = TERRAIN_MOUNTAINS if r < 0.55 else TERRAIN_HILLS
+        elif parent_terrain == TERRAIN_FOREST:
+            t = TERRAIN_FOREST if r < 0.65 else TERRAIN_PLAINS
+        elif parent_terrain == TERRAIN_HILLS:
+            t = TERRAIN_HILLS if r < 0.5 else (TERRAIN_PLAINS if r < 0.85 else TERRAIN_FOREST)
+        elif parent_terrain == TERRAIN_PLAINS:
+            if   r < 0.70: t = TERRAIN_PLAINS
+            elif r < 0.85: t = TERRAIN_HILLS
+            else:          t = TERRAIN_FOREST
+        elif parent_terrain in (TERRAIN_URBAN, TERRAIN_INDUSTRIAL):
+            if   r < 0.45: t = parent_terrain
+            elif r < 0.75: t = TERRAIN_PLAINS
+            else:          t = TERRAIN_HILLS
+        elif parent_terrain == TERRAIN_DESERT:
+            t = TERRAIN_DESERT if r < 0.80 else TERRAIN_HILLS
+        elif parent_terrain == TERRAIN_ARCTIC:
+            t = TERRAIN_ARCTIC if r < 0.80 else TERRAIN_HILLS
+        else:
+            t = rng.choice([TERRAIN_PLAINS, TERRAIN_PLAINS, TERRAIN_HILLS,
+                            TERRAIN_FOREST])
+        result[h.to_tuple()] = t
+    return result
+
+
 def generate_operational_map(
     parent_terrain: str,
     parent_hex: Tuple[int, int],

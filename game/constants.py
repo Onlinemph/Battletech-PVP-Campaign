@@ -9,6 +9,9 @@ HIGH_ALT_HEX_SIZE_M = LOW_ALT_HEX_SIZE_M * HIGH_ALT_HEX_LOW_ALT  # 306,000 m
 # Operational sub-map dimensions (low-altitude hexes per strategic hex)
 OPERATIONAL_RADIUS = 3   # hex-radius, gives 37 hexes ≈ 36
 
+# Tactical sub-map dimensions (mapsheets per low-altitude hex)
+TACTICAL_RADIUS    = 2   # hex-radius, gives 19 hexes ≈ 17
+
 SCALE_STRATEGIC   = "strategic"
 SCALE_OPERATIONAL = "operational"
 
