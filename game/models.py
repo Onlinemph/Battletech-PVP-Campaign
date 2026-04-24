@@ -1,7 +1,7 @@
 """Data classes for all campaign entities."""
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from game.constants import *
 
@@ -151,7 +151,9 @@ class Campaign:
     # Tactical (mapsheet-level) sub-maps keyed by "stratQ,stratR|subQ,subR"
     tac_maps:     Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
     # Turn/event history: list of {"turn": int, "event": str, "detail": str}
-    event_log:    List[Dict]                           = field(default_factory=list)
+    event_log:      List[Dict]                           = field(default_factory=list)
+    # Per-faction set of hexes ever seen: faction_id → set of (q,r) tuples
+    explored_hexes: Dict[str, Set[Tuple[int, int]]]      = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -174,6 +176,10 @@ class Campaign:
                 for mk, mv in self.tac_maps.items()
             },
             "event_log":    list(self.event_log),
+            "explored_hexes": {
+                fid: [list(h) for h in hexes]
+                for fid, hexes in self.explored_hexes.items()
+            },
         }
         return d
 
@@ -202,5 +208,9 @@ class Campaign:
                 mk: parse_tmap(mv)
                 for mk, mv in d.get("tac_maps", {}).items()
             },
-            event_log    = d.get("event_log", []),
+            event_log      = d.get("event_log", []),
+            explored_hexes = {
+                fid: {tuple(h) for h in hexes}
+                for fid, hexes in d.get("explored_hexes", {}).items()
+            },
         )

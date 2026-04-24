@@ -14,8 +14,13 @@ from game.hex_grid import (Hex, hex_corners, hex_to_pixel, pixel_to_hex,
                             hex_range, axial_to_offset)
 from game.models import Campaign, Unit, Mission
 from game.terrain import TERRAIN, terrain_color
-from ui.colors import (FOG, GRID_LINE, GRID_HOVER, SELECTED,
+from ui.colors import (FOG, FOG_KNOWN, GRID_LINE, GRID_HOVER, SELECTED,
                         MISSION_CLR, MISSION_BDR, TEXT, TEXT_DIM)
+
+
+def _dim_color(c: tuple, factor: float = 0.32) -> tuple:
+    """Darken a terrain color for the explored-but-not-visible state."""
+    return (int(c[0] * factor), int(c[1] * factor), int(c[2] * factor))
 
 # Unit-type single letter labels
 UNIT_LABEL = {
@@ -133,27 +138,29 @@ class MapRenderer:
 
     def __init__(
         self,
-        surface:    pygame.Surface,
-        rect:       pygame.Rect,
-        campaign:   Campaign,
-        hex_size:   float             = 20.0,
-        pan:        Tuple[float, float] = (0.0, 0.0),
-        scale:      str               = SCALE_STRATEGIC,
-        op_hex:     Optional[Tuple[int, int]] = None,
-        fog_set:    Optional[Set[Tuple[int, int]]] = None,
-        hover_hex:  Optional[Tuple[int, int]] = None,
-        selected:   Optional[Tuple[int, int]] = None,
+        surface:      pygame.Surface,
+        rect:         pygame.Rect,
+        campaign:     Campaign,
+        hex_size:     float             = 20.0,
+        pan:          Tuple[float, float] = (0.0, 0.0),
+        scale:        str               = SCALE_STRATEGIC,
+        op_hex:       Optional[Tuple[int, int]] = None,
+        fog_set:      Optional[Set[Tuple[int, int]]] = None,
+        explored_set: Optional[Set[Tuple[int, int]]] = None,
+        hover_hex:    Optional[Tuple[int, int]] = None,
+        selected:     Optional[Tuple[int, int]] = None,
     ):
-        self.surface  = surface
-        self.rect     = rect
-        self.campaign = campaign
-        self.hex_size = hex_size
-        self.pan      = pan
-        self.scale    = scale
-        self.op_hex   = op_hex
-        self.fog_set  = fog_set
-        self.hover    = hover_hex
-        self.selected = selected
+        self.surface      = surface
+        self.rect         = rect
+        self.campaign     = campaign
+        self.hex_size     = hex_size
+        self.pan          = pan
+        self.scale        = scale
+        self.op_hex       = op_hex
+        self.fog_set      = fog_set
+        self.explored_set = explored_set
+        self.hover        = hover_hex
+        self.selected     = selected
 
         self._font_sm = pygame.font.SysFont("monospace", max(9, int(hex_size * 0.55)), bold=True)
         self._font_co = pygame.font.SysFont("monospace", max(7, int(hex_size * 0.35)))
@@ -282,8 +289,10 @@ class MapRenderer:
         sqrt3   = math.sqrt(3)
         sqrt3_2 = sqrt3 * 0.5
 
-        key_parent = parent.to_tuple()
-        is_fog = (self.fog_set is not None and key_parent not in self.fog_set)
+        key_parent  = parent.to_tuple()
+        is_fog      = (self.fog_set is not None and key_parent not in self.fog_set)
+        is_explored = (is_fog and self.explored_set is not None
+                       and key_parent in self.explored_set)
 
         show_tactical = self.hex_size >= TACTICAL_ZOOM_THRESHOLD
         border_col = (45, 45, 55)
@@ -312,7 +321,12 @@ class MapRenderer:
                      cy + sub_r * math.sin(math.pi / 3 * i))
                     for i in range(6)
                 ]
-                color = FOG if is_fog else terrain_color(terrain)
+                if not is_fog:
+                    color = terrain_color(terrain)
+                elif is_explored:
+                    color = _dim_color(terrain_color(terrain))
+                else:
+                    color = FOG
                 pygame.draw.polygon(self.surface, color, corners)
                 if sub_r >= 4:
                     pygame.draw.polygon(self.surface, border_col, corners, 1)
@@ -346,9 +360,15 @@ class MapRenderer:
 
     def _draw_hex_fill(self, h: Hex, terrain: str) -> None:
         key = h.to_tuple()
-        is_fog = (self.fog_set is not None and key not in self.fog_set)
-        color  = FOG if is_fog else terrain_color(terrain)
-        pts    = hex_corners(h, self.hex_size, self.ox, self.oy)
+        if self.fog_set is None:
+            color = terrain_color(terrain)
+        elif key in self.fog_set:
+            color = terrain_color(terrain)
+        elif self.explored_set and key in self.explored_set:
+            color = _dim_color(terrain_color(terrain))
+        else:
+            color = FOG
+        pts = hex_corners(h, self.hex_size, self.ox, self.oy)
         pygame.draw.polygon(self.surface, color, pts)
 
     def _draw_hex_border(self, h: Hex) -> None:

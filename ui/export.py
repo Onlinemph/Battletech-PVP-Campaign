@@ -12,6 +12,7 @@ from game.constants import SCALE_STRATEGIC
 from game.hex_grid import Hex, hex_to_pixel
 from game.models import Campaign
 from game.vision import visible_hexes, visible_units, visible_missions
+from game.campaign import update_explored
 from ui.colors import BG, TEXT, TEXT_BRIGHT, PANEL_DARK, BORDER
 from ui.renderer import MapRenderer
 
@@ -86,10 +87,13 @@ def export_view(
     # Determine fog set + filtered units/missions
     if faction_id is None:
         fog_set        = None
+        explored_set   = None
         units_save     = None
         missions_save  = None
     else:
+        update_explored(campaign)
         fog_set        = visible_hexes(campaign, faction_id)
+        explored_set   = campaign.explored_hexes.get(faction_id, set())
         visible        = visible_units(campaign, faction_id, fog_set)
         vis_missions   = {m.id: m for m in visible_missions(campaign, faction_id, fog_set)}
         units_save     = campaign.units
@@ -100,13 +104,14 @@ def export_view(
     # Draw into a sub-rect
     map_rect = pygame.Rect(0, header_h, width, height - header_h)
     renderer = MapRenderer(
-        surface  = surf,
-        rect     = map_rect,
-        campaign = campaign,
-        hex_size = size,
-        pan      = (pan_x, pan_y - header_h),  # rect is offset; pan relative to rect
-        scale    = SCALE_STRATEGIC,
-        fog_set  = fog_set,
+        surface      = surf,
+        rect         = map_rect,
+        campaign     = campaign,
+        hex_size     = size,
+        pan          = (pan_x, pan_y - header_h),
+        scale        = SCALE_STRATEGIC,
+        fog_set      = fog_set,
+        explored_set = explored_set,
     )
     renderer.draw()
 

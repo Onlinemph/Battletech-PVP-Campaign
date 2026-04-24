@@ -122,9 +122,20 @@ def add_mission(
 
 
 def next_turn(campaign: Campaign) -> int:
+    update_explored(campaign)
     campaign.current_turn += 1
     log_event(campaign, "turn_advanced", f"Turn advanced to {campaign.current_turn}")
     return campaign.current_turn
+
+
+def update_explored(campaign: Campaign) -> None:
+    """Snapshot each faction's current visibility into their explored set."""
+    from game.vision import visible_hexes
+    for faction_id in campaign.factions:
+        vis = visible_hexes(campaign, faction_id)
+        if faction_id not in campaign.explored_hexes:
+            campaign.explored_hexes[faction_id] = set()
+        campaign.explored_hexes[faction_id].update(vis)
 
 
 def log_event(campaign: Campaign, event: str, detail: str) -> None:
