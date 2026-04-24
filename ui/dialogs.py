@@ -101,17 +101,24 @@ class DropDown:
         self.selected = selected
         self.open     = False
 
-    def handle_event(self, event: pygame.event.Event) -> None:
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos):
-                self.open = not self.open
-            elif self.open:
-                for i, opt_rect in enumerate(self._option_rects()):
-                    if opt_rect.collidepoint(event.pos):
-                        self.selected = i
-                        self.open = False
-                        return
-                self.open = False
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Return True if the event was consumed (should not be forwarded)."""
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return False
+        if self.rect.collidepoint(event.pos):
+            self.open = not self.open
+            return True
+        if self.open:
+            for i, opt_rect in enumerate(self._option_rects()):
+                if opt_rect.collidepoint(event.pos):
+                    self.selected = i
+                    self.open = False
+                    return True
+            # Click elsewhere while open: close and consume so widgets
+            # hidden underneath the option list don't fire.
+            self.open = False
+            return True
+        return False
 
     def _option_rects(self) -> List[pygame.Rect]:
         rects = []
@@ -127,6 +134,7 @@ class DropDown:
         return self.options[self.selected] if self.options else ""
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Draw the closed (base) part only. Call draw_overlay() last to show open list."""
         pygame.draw.rect(surface, (45, 45, 55), self.rect, border_radius=3)
         pygame.draw.rect(surface, BORDER_LT, self.rect, 1, border_radius=3)
         lbl = self.font.render(self.value, True, TEXT)
@@ -136,13 +144,21 @@ class DropDown:
         ay = self.rect.centery
         pygame.draw.polygon(surface, TEXT_DIM, [(ax, ay - 3), (ax + 7, ay - 3), (ax + 3, ay + 3)])
 
-        if self.open:
-            for i, opt_rect in enumerate(self._option_rects()):
-                bg = BTN_HOVER if i == self.selected else PANEL_DARK
-                pygame.draw.rect(surface, bg, opt_rect)
-                pygame.draw.rect(surface, BORDER, opt_rect, 1)
-                lbl2 = self.font.render(self.options[i], True, TEXT)
-                surface.blit(lbl2, (opt_rect.x + 6, opt_rect.y + (opt_rect.height - lbl2.get_height()) // 2))
+    def draw_overlay(self, surface: pygame.Surface) -> None:
+        """Draw the expanded options list on top of everything else. No-op if closed."""
+        if not self.open:
+            return
+        # Soft shadow
+        shadow = pygame.Surface((self.rect.width + 6,
+                                 self.rect.height * len(self.options) + 6), pygame.SRCALPHA)
+        shadow.fill((0, 0, 0, 120))
+        surface.blit(shadow, (self.rect.x + 2, self.rect.bottom + 2))
+        for i, opt_rect in enumerate(self._option_rects()):
+            bg = BTN_HOVER if i == self.selected else PANEL_DARK
+            pygame.draw.rect(surface, bg, opt_rect)
+            pygame.draw.rect(surface, BORDER, opt_rect, 1)
+            lbl2 = self.font.render(self.options[i], True, TEXT)
+            surface.blit(lbl2, (opt_rect.x + 6, opt_rect.y + (opt_rect.height - lbl2.get_height()) // 2))
 
 
 class ColorSwatch:
@@ -354,9 +370,10 @@ class AddUnitDialog(Dialog):
         self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        # Dropdowns first - they consume clicks on their options so hidden widgets don't fire
+        if self.dd_faction.handle_event(event): return
+        if self.dd_type.handle_event(event):    return
         self.inp_name.handle_event(event)
-        self.dd_faction.handle_event(event)
-        self.dd_type.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -389,6 +406,9 @@ class AddUnitDialog(Dialog):
         self.inp_notes.draw(surface)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
+        # Overlays on top
+        self.dd_faction.draw_overlay(surface)
+        self.dd_type.draw_overlay(surface)
 
 
 # ── Add Mission dialog ─────────────────────────────────────────────────────────
@@ -411,8 +431,8 @@ class AddMissionDialog(Dialog):
         self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_type.handle_event(event): return
         self.inp_name.handle_event(event)
-        self.dd_type.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
         self.btn_cancel.handle_event(event)
@@ -436,6 +456,7 @@ class AddMissionDialog(Dialog):
         self.inp_notes.draw(surface)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
+        self.dd_type.draw_overlay(surface)
 
 
 # ── Edit Unit dialog ───────────────────────────────────────────────────────────
@@ -470,8 +491,8 @@ class EditUnitDialog(Dialog):
         self.btn_cancel   = Button(pygame.Rect(self.rect.right - 100, btn_y,  90, 32), "Cancel",   self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_status.handle_event(event): return
         self.inp_name.handle_event(event)
-        self.dd_status.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -536,6 +557,7 @@ class EditUnitDialog(Dialog):
         self.btn_ok.draw(surface)
         self.btn_roster.draw(surface)
         self.btn_cancel.draw(surface)
+        self.dd_status.draw_overlay(surface)
 
 
 # ── Load Campaign dialog ───────────────────────────────────────────────────────
@@ -615,7 +637,7 @@ class ExportDialog(Dialog):
         self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        self.dd.handle_event(event)
+        if self.dd.handle_event(event): return
         self.inp_w.handle_event(event)
         self.inp_h.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -642,6 +664,7 @@ class ExportDialog(Dialog):
         self.inp_h.draw(surface)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
+        self.dd.draw_overlay(surface)
 
 
 # ── Confirmation dialog ────────────────────────────────────────────────────────
