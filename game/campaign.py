@@ -1,4 +1,5 @@
 """Campaign operations: creation, persistence, and turn management."""
+import heapq
 import json
 import os
 from datetime import datetime
@@ -11,16 +12,58 @@ from game.models import Campaign, Faction, Unit, Mission, Structure, Group, Obje
 from game.constants import *
 
 
-# ── Movement helpers (BT 8-hour shift math) ───────────────────────────────────
+# ── Movement helpers (BT 4-hour phase math) ──────────────────────────────────
+
+def walk_mp_to_move_points(walk_mp: int) -> float:
+    """Float movement budget in plains-hex equivalents per strategic phase.
+    Formula: walk_mp × 86.4 km/8h ÷ HOURS_PER_PHASE ÷ 18 km/hex."""
+    return walk_mp * 86.4 / HOURS_PER_PHASE / 18
+
 
 def walk_mp_to_strategic(walk_mp: int) -> int:
-    """Strategic hexes per 8h phase.  1 Walk MP = 86.4 km; 1 strategic hex = 18 km."""
-    return max(1, round(walk_mp * 86.4 / 18))
+    """Strategic hexes per phase through open plains (rounded)."""
+    return max(1, round(walk_mp_to_move_points(walk_mp)))
 
 
 def walk_mp_to_op_range(walk_mp: int) -> int:
     """Operational hexes per sub-turn for pre-battle positioning (gameplay-scaled)."""
     return max(1, walk_mp // 2)
+
+
+def strategic_reachable(campaign, position: tuple, walk_mp: int,
+                        unit_type: str = "BattleMech") -> set:
+    """Dijkstra flood-fill: all strategic hexes reachable within one phase.
+    Terrain costs from TERRAIN_MOVE_COST; Aerospace/DropShip ignore terrain."""
+    budget = walk_mp_to_move_points(walk_mp)
+    if budget <= 0:
+        return {position}
+
+    from game.hex_grid import Hex, hex_range, hex_neighbors
+
+    # Aerospace and DropShip fly over everything — simple radius
+    if unit_type in (UNIT_AEROSPACE, UNIT_DROPSHIP):
+        r = max(1, round(budget))
+        return {h.to_tuple() for h in hex_range(Hex.from_tuple(position), r)}
+
+    dist = {position: 0.0}
+    heap = [(0.0, position)]
+    reachable = {position}
+    while heap:
+        cost, pos = heapq.heappop(heap)
+        if cost > dist.get(pos, float("inf")) + 1e-9:
+            continue
+        for nb in hex_neighbors(Hex.from_tuple(pos)):
+            nb_t = nb.to_tuple()
+            terrain = campaign.terrain_map.get(nb_t, TERRAIN_PLAINS)
+            entry_cost = TERRAIN_MOVE_COST.get(terrain)
+            if entry_cost is None:
+                continue  # impassable (deep water, etc.)
+            new_cost = cost + entry_cost
+            if new_cost <= budget + 1e-9 and new_cost < dist.get(nb_t, float("inf")) - 1e-9:
+                dist[nb_t] = new_cost
+                reachable.add(nb_t)
+                heapq.heappush(heap, (new_cost, nb_t))
+    return reachable
 
 SAVES_DIR = Path(__file__).parent.parent / "saves"
 

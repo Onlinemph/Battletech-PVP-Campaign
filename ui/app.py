@@ -27,7 +27,7 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
                             next_op_turn, get_operational_map, log_event, add_structure,
                             add_group, add_objective, log_combat,
                             walk_mp_to_strategic, walk_mp_to_op_range,
-                            compute_daily_income)
+                            strategic_reachable, compute_daily_income)
 from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
@@ -787,9 +787,9 @@ class App:
             if u:
                 eff_walk = self._group_walk_mp(u)
                 if self.scale == SCALE_STRATEGIC and u.position is not None:
-                    move_range = walk_mp_to_strategic(eff_walk)
-                    center = Hex.from_tuple(u.position)
-                    highlight_hexes = {h.to_tuple() for h in hex_range(center, move_range)}
+                    highlight_hexes = strategic_reachable(
+                        self.campaign, u.position, eff_walk, u.unit_type
+                    )
                 elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
                     op_range = walk_mp_to_op_range(eff_walk)
                     center = Hex.from_tuple(u.sub_position)

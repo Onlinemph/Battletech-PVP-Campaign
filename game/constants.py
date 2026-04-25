@@ -134,6 +134,9 @@ PHASE_COLOR     = {
 # Operational sub-turns per strategic phase (8h phase ÷ 1h sub-turns)
 OP_TURNS_PER_PHASE = 8
 
+# Hours of travel covered per strategic phase (shorter = fewer hexes moved per phase)
+HOURS_PER_PHASE = 4
+
 # Default movement range (strategic hexes/turn) — legacy fallback for Aerospace/DropShip
 DEFAULT_MOVE_RANGE = {
     UNIT_MECH:      3,
@@ -182,4 +185,21 @@ UNIT_MAINTENANCE = {
     UNIT_AEROSPACE: 15_000,
     UNIT_INFANTRY:   2_000,
     UNIT_DROPSHIP:  20_000,
+}
+
+# ── Terrain movement costs (strategic Dijkstra) ───────────────────────────────
+# Cost in "plains-hex equivalents" to enter that terrain type. None = impassable.
+TERRAIN_MOVE_COST = {
+    TERRAIN_PLAINS:     1.0,
+    TERRAIN_COAST:      1.0,
+    TERRAIN_FOREST:     1.5,
+    TERRAIN_HILLS:      1.5,
+    TERRAIN_DESERT:     1.5,
+    TERRAIN_ARCTIC:     2.0,
+    TERRAIN_MOUNTAINS:  3.0,
+    TERRAIN_URBAN:      1.5,
+    TERRAIN_INDUSTRIAL: 1.5,
+    TERRAIN_VOLCANIC:   3.0,
+    TERRAIN_WATER:      3.0,      # mechs wade (very slow)
+    TERRAIN_DEEP_WATER: None,     # impassable
 }
