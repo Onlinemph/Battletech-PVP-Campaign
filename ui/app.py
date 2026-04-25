@@ -618,8 +618,9 @@ class App:
             u = add_unit(self.campaign, r["name"], r["faction_id"], r["unit_type"],
                          position=r["position"], vision_range=r["vision"])
             u.notes        = r.get("notes", "")
-            u.walk_mp      = r.get("walk_mp", 4)
-            u.run_mp       = r.get("run_mp",  6)
+            u.walk_mp      = r.get("walk_mp",      4)
+            u.run_mp       = r.get("run_mp",       6)
+            u.battle_value = r.get("battle_value", 0)
             u.sub_position = getattr(d, "_sub_pos", None)
             u.tac_position = getattr(d, "_tac_pos", None)
             self.selected_unit_id = u.id

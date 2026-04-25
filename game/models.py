@@ -47,6 +47,7 @@ class Unit:
     repair_cost:  int  = 0                      # C-Bills to restore to active
     walk_mp:      int  = 4                      # BattleTech Walk movement points
     run_mp:       int  = 6                      # BattleTech Run movement points
+    battle_value: int  = 0                      # MUL / TRO Battle Value for force balancing
     group_id:     Optional[str] = None          # lance/group membership
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
@@ -72,8 +73,9 @@ class Unit:
         for f in ("position", "sub_position", "tac_position"):
             if d.get(f) is not None:
                 d[f] = tuple(d[f])
-        d.setdefault("walk_mp", 4)
-        d.setdefault("run_mp",  6)
+        d.setdefault("walk_mp",      4)
+        d.setdefault("run_mp",       6)
+        d.setdefault("battle_value", 0)
         return cls(**d)
 
 

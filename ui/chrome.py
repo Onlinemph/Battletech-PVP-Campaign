@@ -8,7 +8,8 @@ import pygame
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
                              PHASE_COLOR, PHASE_ABBR, PHASE_MORNING,
-                             OP_TURNS_PER_PHASE)
+                             OP_TURNS_PER_PHASE,
+                             STATUS_DESTROYED, STATUS_RETREATED)
 from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
@@ -238,6 +239,12 @@ def draw_sidebar(
         daily  = f"  +{inc_k}k / -{mnt_k}k = {sign}{net_k}k/day"
         surface.blit(font_sm.render(daily, True, net_color), (x + 24, cy + 1))
         cy += 14
+        # Total Battle Value
+        total_bv = sum(u.battle_value for u in campaign.units.values()
+                       if u.faction_id == f.id
+                       and u.status not in (STATUS_DESTROYED, STATUS_RETREATED))
+        surface.blit(font_sm.render(f"  BV: {total_bv:,}", True, TEXT_DIM), (x + 24, cy + 1))
+        cy += 13
 
     if not campaign.factions:
         surface.blit(font_sm.render("(none yet — click +Faction)", True, TEXT_DIM), (x + 12, cy))
@@ -457,6 +464,9 @@ def draw_sidebar(
             surface.blit(font_sm.render(f"Faction has: {faction_res:,} C-Bills", True, TEXT_DIM),
                          (x + 12, cy)); cy += 14
         surface.blit(font_sm.render(f"Vision: {u.vision_range} hex", True, TEXT), (x + 12, cy)); cy += 14
+        bv_color = TEXT_WARN if u.battle_value == 0 else TEXT
+        bv_label = f"BV: {u.battle_value:,}" if u.battle_value else "BV: (not set)"
+        surface.blit(font_sm.render(bv_label, True, bv_color), (x + 12, cy)); cy += 14
         if u.group_id and u.group_id in campaign.groups:
             g = campaign.groups[u.group_id]
             surface.blit(font_sm.render(f"Group: {g.name}", True, TEXT_WARN), (x + 12, cy)); cy += 14

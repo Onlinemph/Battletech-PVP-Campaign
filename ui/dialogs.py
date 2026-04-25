@@ -350,7 +350,7 @@ class AddFactionDialog(Dialog):
 # ── Add Unit dialog ────────────────────────────────────────────────────────────
 
 class AddUnitDialog(Dialog):
-    W, H = 520, 410
+    W, H = 520, 450
 
     # Default walk/run MP by unit type (Aerospace uses thrust points as proxy)
     _DEFAULT_MP = {
@@ -373,6 +373,7 @@ class AddUnitDialog(Dialog):
         self.inp_run     = TextInput(pygame.Rect(x + 220, y + 114,  60, 28), self.font, "6", "6")
         self.inp_vision  = TextInput(pygame.Rect(x + 130, y + 152,  80, 28), self.font, "2", "2")
         self.inp_notes   = TextInput(pygame.Rect(x + 130, y + 190, 330, 28), self.font, "optional notes")
+        self.inp_bv      = TextInput(pygame.Rect(x + 130, y + 228,  90, 28), self.font, "0", "0")
 
         self._faction_ids = [f[1] for f in factions]  # parallel list of IDs
 
@@ -393,6 +394,7 @@ class AddUnitDialog(Dialog):
         self.inp_run.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
+        self.inp_bv.handle_event(event)
         self.btn_ok.handle_event(event)
         self.btn_cancel.handle_event(event)
         if self.btn_cancel.clicked:
@@ -407,8 +409,9 @@ class AddUnitDialog(Dialog):
                 run_mp     = int(self.inp_run.value  or r_def)
                 vision     = int(self.inp_vision.value or self.DEFAULT_VISION.get(unit_type, 2))
                 notes      = self.inp_notes.value.strip()
+                bv         = int(self.inp_bv.value or 0)
                 self.result = dict(name=name, faction_id=faction_id, unit_type=unit_type,
-                                   walk_mp=walk_mp, run_mp=run_mp,
+                                   walk_mp=walk_mp, run_mp=run_mp, battle_value=bv,
                                    vision=vision, notes=notes, position=self.hex_pos)
                 self.done = True
             except (ValueError, IndexError):
@@ -417,7 +420,7 @@ class AddUnitDialog(Dialog):
     def draw(self, surface: pygame.Surface) -> None:
         self._draw_frame(surface)
         x, y = self.rect.x + 20, self.rect.y + 50
-        labels = ["Unit Name:", "Faction:", "Unit Type:", "Walk / Run MP:", "Vision Range:", "Notes:"]
+        labels = ["Unit Name:", "Faction:", "Unit Type:", "Walk / Run MP:", "Vision Range:", "Notes:", "Battle Value (BV):"]
         for i, lbl in enumerate(labels):
             self.label(surface, lbl, x, y + 7 + i * 38)
         self.inp_name.draw(surface)
@@ -428,6 +431,7 @@ class AddUnitDialog(Dialog):
         self.inp_run.draw(surface)
         self.inp_vision.draw(surface)
         self.inp_notes.draw(surface)
+        self.inp_bv.draw(surface)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
         self.dd_faction.draw_overlay(surface)
@@ -496,8 +500,10 @@ class EditUnitDialog(Dialog):
         self.inp_name        = TextInput(pygame.Rect(x + 140, y,        370, 28), self.font, value=unit.name)
         self.dd_status       = DropDown( pygame.Rect(x + 140, y + 38,   200, 28), UNIT_STATUSES, self.font,
                                          selected=UNIT_STATUSES.index(unit.status) if unit.status in UNIT_STATUSES else 0)
-        self.inp_repair_cost = TextInput(pygame.Rect(x + 140, y + 76,   130, 28), self.font,
+        self.inp_repair_cost = TextInput(pygame.Rect(x + 140, y + 76,   100, 28), self.font,
                                          placeholder="0", value=str(unit.repair_cost) if unit.repair_cost else "")
+        self.inp_bv          = TextInput(pygame.Rect(x + 300, y + 76,   100, 28), self.font,
+                                         placeholder="0", value=str(unit.battle_value) if unit.battle_value else "")
         self.inp_vision      = TextInput(pygame.Rect(x + 140, y + 114,   80, 28), self.font, value=str(unit.vision_range))
         self.inp_notes       = TextInput(pygame.Rect(x + 140, y + 152,  370, 28), self.font, value=unit.notes)
 
@@ -533,6 +539,7 @@ class EditUnitDialog(Dialog):
         if self.dd_group.handle_event(event):  return
         self.inp_name.handle_event(event)
         self.inp_repair_cost.handle_event(event)
+        self.inp_bv.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -553,6 +560,7 @@ class EditUnitDialog(Dialog):
                 self.unit.name         = self.inp_name.value.strip() or self.unit.name
                 self.unit.status       = self.dd_status.value
                 self.unit.repair_cost  = int(self.inp_repair_cost.value or 0)
+                self.unit.battle_value = int(self.inp_bv.value or 0)
                 self.unit.vision_range = int(self.inp_vision.value or 2)
                 self.unit.notes        = self.inp_notes.value.strip()
                 self.unit.group_id     = self._group_ids[self.dd_group.selected] or None
@@ -573,15 +581,17 @@ class EditUnitDialog(Dialog):
     def draw(self, surface: pygame.Surface) -> None:
         self._draw_frame(surface)
         x, y = self.rect.x + 20, self.rect.y + 50
-        self.label(surface, "Unit Name:",        x, y + 7)
-        self.label(surface, "Status:",           x, y + 45)
-        self.label(surface, "Repair Cost (C-Bills):", x, y + 83)
-        self.label(surface, "Vision:",           x, y + 121)
-        self.label(surface, "Notes:",            x, y + 159)
-        self.label(surface, "Group:",            x, y + 197)
+        self.label(surface, "Unit Name:",   x, y + 7)
+        self.label(surface, "Status:",      x, y + 45)
+        self.label(surface, "Repair Cost:", x, y + 83)
+        self.label(surface, "BV:",          x + 260, y + 83)
+        self.label(surface, "Vision:",      x, y + 121)
+        self.label(surface, "Notes:",       x, y + 159)
+        self.label(surface, "Group:",       x, y + 197)
         self.inp_name.draw(surface)
         self.dd_status.draw(surface)
         self.inp_repair_cost.draw(surface)
+        self.inp_bv.draw(surface)
         self.inp_vision.draw(surface)
         self.inp_notes.draw(surface)
         self.dd_group.draw(surface)
