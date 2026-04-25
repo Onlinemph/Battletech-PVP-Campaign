@@ -122,6 +122,18 @@ OBJECTIVE_CAPTURED = "captured"
 OBJECTIVE_DENIED   = "denied"
 OBJECTIVE_STATUSES = [OBJECTIVE_ACTIVE, OBJECTIVE_CAPTURED, OBJECTIVE_DENIED]
 
+# ── Day/Phase system ──────────────────────────────────────────────────────────
+PHASE_MORNING   = "morning"
+PHASE_AFTERNOON = "afternoon"
+PHASE_NIGHT     = "night"
+PHASES          = [PHASE_MORNING, PHASE_AFTERNOON, PHASE_NIGHT]
+PHASE_ABBR      = {PHASE_MORNING: "AM", PHASE_AFTERNOON: "PM", PHASE_NIGHT: "**"}
+PHASE_COLOR     = {
+    PHASE_MORNING:   (255, 180,  60),
+    PHASE_AFTERNOON: (220, 140,  30),
+    PHASE_NIGHT:     ( 80, 100, 190),
+}
+
 # Default movement range (strategic hexes/turn)
 DEFAULT_MOVE_RANGE = {
     UNIT_MECH:      3,
