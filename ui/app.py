@@ -11,13 +11,15 @@ import pygame
 
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              DEFAULT_VISION, UNIT_MECH,
-                             HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M)
-from game.hex_grid import Hex, pixel_to_hex, hex_to_pixel, axial_to_offset
+                             HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
+                             DEFAULT_MOVE_RANGE)
+from game.hex_grid import Hex, pixel_to_hex, hex_to_pixel, axial_to_offset, hex_range
 from game.models import Campaign
 from game.terrain import terrain_name
 from game.campaign import (new_campaign, save_campaign, load_campaign, list_saves,
                             add_faction, add_unit, add_mission, next_turn,
-                            get_operational_map, log_event)
+                            get_operational_map, log_event, add_structure)
+from game.vision import visible_hexes, supplied_units, has_supply_sources
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
 from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
@@ -26,7 +28,7 @@ from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          AddMissionDialog, EditUnitDialog, LoadDialog,
                          ExportDialog, ConfirmDialog, ResolveMissionDialog,
-                         AdjustFundsDialog)
+                         AdjustFundsDialog, AddStructureDialog, HexNoteDialog)
 from ui.export import export_view
 
 
@@ -298,6 +300,12 @@ class App:
         elif self.tool == "add_mission":
             self.dialog = AddMissionDialog((self.width, self.height), coord)
 
+        elif self.tool == "add_structure":
+            if self.scale != SCALE_STRATEGIC:
+                return
+            self.dialog = AddStructureDialog(
+                (self.width, self.height), coord, self.campaign.factions)
+
         elif self.tool == "delete":
             if self.scale != SCALE_STRATEGIC:
                 return
@@ -377,6 +385,18 @@ class App:
             if f:
                 self.dialog = AdjustFundsDialog((self.width, self.height), f.name, f.resources)
                 self.dialog._faction_id = box.data  # type: ignore[attr-defined]
+        elif box.name == "structure":
+            s = self.campaign.structures.get(box.data)
+            if s:
+                self._toast_msg(f"Structure: {s.name} ({s.structure_type})")
+        elif box.name == "edit_note":
+            note_key = box.data
+            existing = self.campaign.hex_notes.get(note_key, "")
+            try:
+                q, r = (int(x) for x in note_key.split(","))
+            except ValueError:
+                return
+            self.dialog = HexNoteDialog((self.width, self.height), (q, r), existing)
         elif box.name == "pay_repair":
             u = self.campaign.units.get(box.data)
             if u:
@@ -458,6 +478,22 @@ class App:
                           f"{abs(r['delta']):,} C-Bills {verb} {f.name}{reason}")
                 self._toast_msg(f"{f.name}: {f.resources:,} C-Bills")
 
+        elif isinstance(d, AddStructureDialog):
+            r = d.result
+            s = add_structure(self.campaign, r["name"], r["structure_type"],
+                              r["position"], r["faction_id"], r["supply_range"])
+            s.notes = r.get("notes", "")
+            self._toast_msg(f"Placed: {s.name}")
+
+        elif isinstance(d, HexNoteDialog):
+            r = d.result
+            key = f"{r['position'][0]},{r['position'][1]}"
+            if r["text"]:
+                self.campaign.hex_notes[key] = r["text"]
+            else:
+                self.campaign.hex_notes.pop(key, None)
+            self._toast_msg("Note saved." if r["text"] else "Note cleared.")
+
         elif isinstance(d, ExportDialog):
             r = d.result
             path = export_view(self.campaign, r["faction_id"], r["width"], r["height"])
@@ -527,20 +563,40 @@ class App:
         # Fog set if a faction filter is active (GM peeks at player view)
         fog_set = None
         if self.faction_filter is not None:
-            from game.vision import visible_hexes
             fog_set = visible_hexes(self.campaign, self.faction_filter)
 
+        # Movement range highlight when a source unit is selected in move mode
+        highlight_hexes = None
+        if (self.tool == "move" and self.move_source_unit
+                and self.scale == SCALE_STRATEGIC):
+            u = self.campaign.units.get(self.move_source_unit)
+            if u and u.position is not None:
+                move_range = DEFAULT_MOVE_RANGE.get(u.unit_type, 3)
+                center = Hex.from_tuple(u.position)
+                highlight_hexes = {h.to_tuple() for h in hex_range(center, move_range)}
+
+        # Supply indicators: orange ring on units out of supply range
+        supply_set = None
+        if self.scale == SCALE_STRATEGIC and self.campaign.factions:
+            if any(has_supply_sources(self.campaign, fid)
+                   for fid in self.campaign.factions):
+                supply_set = set()
+                for fid in self.campaign.factions:
+                    supply_set.update(supplied_units(self.campaign, fid))
+
         renderer = MapRenderer(
-            surface   = self.screen,
-            rect      = rect,
-            campaign  = self.campaign,
-            hex_size  = self.hex_size,
-            pan       = (self.pan_x, self.pan_y),
-            scale     = self.scale,
-            op_hex    = self.op_hex,
-            fog_set   = fog_set,
-            hover_hex = hover_hex,
-            selected  = self.selected_hex,
+            surface         = self.screen,
+            rect            = rect,
+            campaign        = self.campaign,
+            hex_size        = self.hex_size,
+            pan             = (self.pan_x, self.pan_y),
+            scale           = self.scale,
+            op_hex          = self.op_hex,
+            fog_set         = fog_set,
+            hover_hex       = hover_hex,
+            selected        = self.selected_hex,
+            highlight_hexes = highlight_hexes,
+            supply_set      = supply_set,
         )
         renderer.draw()
 

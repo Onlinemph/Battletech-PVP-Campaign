@@ -102,11 +102,12 @@ def draw_toolbar(
     sep()
 
     # Tools
-    btn("tool_select",       "Select",       70, active=(active_tool == "select"))
-    btn("tool_move",         "Move",         62, active=(active_tool == "move"))
-    btn("tool_add_unit",     "+Unit",        62, active=(active_tool == "add_unit"))
-    btn("tool_add_mission",  "+Mission",     82, active=(active_tool == "add_mission"))
-    btn("tool_delete",       "Delete",       66, active=(active_tool == "delete"))
+    btn("tool_select",        "Select",       70, active=(active_tool == "select"))
+    btn("tool_move",          "Move",         62, active=(active_tool == "move"))
+    btn("tool_add_unit",      "+Unit",        62, active=(active_tool == "add_unit"))
+    btn("tool_add_mission",   "+Mission",     82, active=(active_tool == "add_mission"))
+    btn("tool_add_structure", "+Struct",      72, active=(active_tool == "add_structure"))
+    btn("tool_delete",        "Delete",       66, active=(active_tool == "delete"))
     sep()
 
     btn("view_strategic",   "Strategic",   86, active=(scale == SCALE_STRATEGIC))
@@ -232,6 +233,23 @@ def draw_sidebar(
                 boxes.append(Hitbox("unit", row, u.id))
                 cy += 22
 
+        # Structures in this hex
+        hex_structs = [s for s in campaign.structures.values()
+                       if s.position == selected_hex and scale == SCALE_STRATEGIC]
+        if hex_structs:
+            cy += 4
+            surface.blit(font.render(f"Structures ({len(hex_structs)}):", True, TEXT_BRIGHT), (x + 12, cy)); cy += 16
+            for s in hex_structs:
+                row = pygame.Rect(x + 14, cy, width - 28, 20)
+                bg = BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK
+                pygame.draw.rect(surface, bg, row, border_radius=2)
+                f_color = campaign.factions[s.faction_id].color if s.faction_id and s.faction_id in campaign.factions else (90, 90, 90)
+                pygame.draw.rect(surface, f_color, pygame.Rect(row.x + 2, row.y + 2, 4, 16), border_radius=1)
+                lbl = font_sm.render(f"{s.structure_type[:10]}: {s.name[:14]}", True, TEXT)
+                surface.blit(lbl, (row.x + 10, row.y + 4))
+                boxes.append(Hitbox("structure", row, s.id))
+                cy += 22
+
         # Missions in this hex
         hex_missions = [m for m in campaign.missions.values() if m.position == selected_hex and scale == SCALE_STRATEGIC]
         if hex_missions:
@@ -247,6 +265,23 @@ def draw_sidebar(
                 surface.blit(lbl, (row.x + 10, row.y + 4))
                 boxes.append(Hitbox("mission", row, m.id))
                 cy += 22
+
+        # GM hex note
+        note_key = f"{selected_hex[0]},{selected_hex[1]}"
+        note = campaign.hex_notes.get(note_key, "")
+        cy += 4
+        note_btn = pygame.Rect(x + 14, cy, width - 28, 18)
+        nb_bg = BTN_HOVER if note_btn.collidepoint(hover_pos) else BTN_NORMAL
+        pygame.draw.rect(surface, nb_bg, note_btn, border_radius=2)
+        note_lbl = font_sm.render("Edit Note" if note else "+ Add Note", True, BTN_TEXT)
+        surface.blit(note_lbl, (note_btn.x + 6, note_btn.y + 3))
+        boxes.append(Hitbox("edit_note", note_btn, note_key))
+        cy += 20
+        if note:
+            for chunk in (note[:34], note[34:68]):
+                if chunk:
+                    surface.blit(font_sm.render(chunk, True, TEXT_WARN), (x + 14, cy))
+                    cy += 13
 
     cy += 6
 

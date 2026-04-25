@@ -22,6 +22,20 @@ def _dim_color(c: tuple, factor: float = 0.32) -> tuple:
     """Darken a terrain color for the explored-but-not-visible state."""
     return (int(c[0] * factor), int(c[1] * factor), int(c[2] * factor))
 
+# Structure type → (letter, background-color)
+STRUCTURE_GLYPH = {
+    "City":           ("C", (155, 135, 115)),
+    "Town":           ("T", (145, 125, 105)),
+    "Village":        ("v", (125, 105,  85)),
+    "Military Base":  ("B", ( 55, 105,  45)),
+    "FOB":            ("f", ( 65,  95,  45)),
+    "Supply Depot":   ("S", ( 55,  85, 155)),
+    "Airfield":       ("A", ( 45, 105, 165)),
+    "Factory":        ("X", ( 95,  65,  45)),
+    "Spaceport":      ("*", ( 85,  75, 155)),
+    "Comms Tower":    ("R", (135,  95,  55)),
+}
+
 # Unit-type single letter labels
 UNIT_LABEL = {
     UNIT_MECH:      "M",
@@ -138,29 +152,33 @@ class MapRenderer:
 
     def __init__(
         self,
-        surface:      pygame.Surface,
-        rect:         pygame.Rect,
-        campaign:     Campaign,
-        hex_size:     float             = 20.0,
-        pan:          Tuple[float, float] = (0.0, 0.0),
-        scale:        str               = SCALE_STRATEGIC,
-        op_hex:       Optional[Tuple[int, int]] = None,
-        fog_set:      Optional[Set[Tuple[int, int]]] = None,
-        explored_set: Optional[Set[Tuple[int, int]]] = None,
-        hover_hex:    Optional[Tuple[int, int]] = None,
-        selected:     Optional[Tuple[int, int]] = None,
+        surface:        pygame.Surface,
+        rect:           pygame.Rect,
+        campaign:       Campaign,
+        hex_size:       float             = 20.0,
+        pan:            Tuple[float, float] = (0.0, 0.0),
+        scale:          str               = SCALE_STRATEGIC,
+        op_hex:         Optional[Tuple[int, int]] = None,
+        fog_set:        Optional[Set[Tuple[int, int]]] = None,
+        explored_set:   Optional[Set[Tuple[int, int]]] = None,
+        hover_hex:      Optional[Tuple[int, int]] = None,
+        selected:       Optional[Tuple[int, int]] = None,
+        highlight_hexes: Optional[Set[Tuple[int, int]]] = None,
+        supply_set:     Optional[Set[str]] = None,   # unit IDs that are supplied
     ):
-        self.surface      = surface
-        self.rect         = rect
-        self.campaign     = campaign
-        self.hex_size     = hex_size
-        self.pan          = pan
-        self.scale        = scale
-        self.op_hex       = op_hex
-        self.fog_set      = fog_set
-        self.explored_set = explored_set
-        self.hover        = hover_hex
-        self.selected     = selected
+        self.surface         = surface
+        self.rect            = rect
+        self.campaign        = campaign
+        self.hex_size        = hex_size
+        self.pan             = pan
+        self.scale           = scale
+        self.op_hex          = op_hex
+        self.fog_set         = fog_set
+        self.explored_set    = explored_set
+        self.hover           = hover_hex
+        self.selected        = selected
+        self.highlight_hexes = highlight_hexes
+        self.supply_set      = supply_set
 
         self._font_sm = pygame.font.SysFont("monospace", max(9, int(hex_size * 0.55)), bold=True)
         self._font_co = pygame.font.SysFont("monospace", max(7, int(hex_size * 0.35)))
@@ -235,6 +253,12 @@ class MapRenderer:
         show_subhexes = (self.scale == SCALE_STRATEGIC
                          and self.hex_size >= SUBHEX_ZOOM_THRESHOLD)
 
+        # Group structures by hex
+        structures_by_hex: Dict[Tuple[int, int], list] = {}
+        if self.scale == SCALE_STRATEGIC:
+            for s in self.campaign.structures.values():
+                structures_by_hex.setdefault(s.position, []).append(s)
+
         if show_subhexes:
             for h, terrain in hexes:
                 self._draw_subhexes(h, terrain)
@@ -242,13 +266,22 @@ class MapRenderer:
             for h, _ in hexes:
                 self._draw_hex_outline(h, STRAT_GUIDE, 2)
         else:
-            # Draw fill
             for h, terrain in hexes:
                 self._draw_hex_fill(h, terrain)
-
-            # Draw grid lines
             for h, _ in hexes:
                 self._draw_hex_border(h)
+
+        # Movement-range highlight overlay
+        if self.highlight_hexes:
+            for h, _ in hexes:
+                if h.to_tuple() in self.highlight_hexes:
+                    self._draw_hex_highlight(h)
+
+        # Draw structures (below missions and units)
+        for h, _ in hexes:
+            key = h.to_tuple()
+            if key in structures_by_hex:
+                self._draw_structures(h, structures_by_hex[key])
 
         # Draw missions
         for h, terrain in hexes:
@@ -371,6 +404,13 @@ class MapRenderer:
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
         pygame.draw.polygon(self.surface, color, pts)
 
+    def _draw_hex_highlight(self, h: Hex) -> None:
+        pts = hex_corners(h, self.hex_size, self.ox, self.oy)
+        surf = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(surf, (80, 160, 255, 55), pts)
+        self.surface.blit(surf, (0, 0))
+        pygame.draw.polygon(self.surface, (80, 160, 255), pts, 1)
+
     def _draw_hex_border(self, h: Hex) -> None:
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
         pygame.draw.polygon(self.surface, GRID_LINE, pts, 1)
@@ -390,6 +430,30 @@ class MapRenderer:
         surf = self._font_co.render(label, True, (80, 80, 90))
         r = surf.get_rect(center=(int(cx), int(cy) + int(self.hex_size * 0.5)))
         self.surface.blit(surf, r)
+
+    def _draw_structures(self, h: Hex, structures: list) -> None:
+        key    = h.to_tuple()
+        is_fog = (self.fog_set is not None and key not in self.fog_set)
+        if is_fog:
+            return
+        cx, cy = self.hex_center(h)
+        sz     = max(5, int(self.hex_size * 0.22))
+        for i, s in enumerate(structures[:3]):
+            glyph, bg = STRUCTURE_GLYPH.get(s.structure_type, ("?", (120, 100, 80)))
+            # Stack multiple structures horizontally
+            sx = cx - (len(structures) - 1) * (sz + 2) // 2 + i * (sz + 2)
+            sy = cy + int(self.hex_size * 0.30)
+            r  = pygame.Rect(int(sx - sz), int(sy - sz // 2), sz * 2, sz)
+            pygame.draw.rect(self.surface, bg, r, border_radius=2)
+            # Faction-color border if owned
+            if s.faction_id:
+                f = self.campaign.factions.get(s.faction_id)
+                if f:
+                    pygame.draw.rect(self.surface, f.color, r, 1, border_radius=2)
+            if sz >= 8:
+                font = pygame.font.SysFont("monospace", max(7, sz - 2), bold=True)
+                lbl  = font.render(glyph, True, (240, 240, 240))
+                self.surface.blit(lbl, lbl.get_rect(center=(int(sx), int(sy))))
 
     def _draw_mission_icon(self, h: Hex, missions: list) -> None:
         key = h.to_tuple()
@@ -442,9 +506,11 @@ class MapRenderer:
                 faction = self.campaign.factions.get(unit.faction_id)
                 fc = tuple(faction.color) if faction else (150, 150, 150)
                 status_border = STATUS_COLORS.get(unit.status, (255, 255, 255))
+                unsupplied = (self.supply_set is not None
+                               and unit.id not in self.supply_set)
                 _draw_unit_circle(self.surface, (ux, uy), radius, fc, status_border,
                                   UNIT_LABEL.get(unit.unit_type, "?"), self._font_sm,
-                                  unit.status == STATUS_DESTROYED)
+                                  unit.status == STATUS_DESTROYED, unsupplied)
 
     # ── export surface ────────────────────────────────────────────────────────
 
@@ -502,19 +568,22 @@ def _unit_offsets(n: int, spread: float) -> list:
 
 
 def _draw_unit_circle(
-    surface:  pygame.Surface,
-    center:   Tuple[float, float],
-    radius:   int,
-    fill:     tuple,
-    border:   tuple,
-    label:    str,
-    font:     pygame.font.Font,
-    dead:     bool = False,
+    surface:    pygame.Surface,
+    center:     Tuple[float, float],
+    radius:     int,
+    fill:       tuple,
+    border:     tuple,
+    label:      str,
+    font:       pygame.font.Font,
+    dead:       bool = False,
+    unsupplied: bool = False,
 ) -> None:
     cx, cy = int(center[0]), int(center[1])
     alpha_fill = tuple(max(0, min(255, int(c * (0.5 if dead else 1.0)))) for c in fill)
     pygame.draw.circle(surface, alpha_fill, (cx, cy), radius)
     pygame.draw.circle(surface, border,     (cx, cy), radius, max(1, radius // 4))
+    if unsupplied:
+        pygame.draw.circle(surface, (255, 140, 0), (cx, cy), radius + 2, 2)
     if dead:
         pygame.draw.line(surface, (200, 40, 40), (cx - radius + 2, cy - radius + 2),
                          (cx + radius - 2, cy + radius - 2), 2)

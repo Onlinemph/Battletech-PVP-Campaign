@@ -132,6 +132,37 @@ class Mission:
         return cls(**d)
 
 
+# ── Structure ─────────────────────────────────────────────────────────────────
+
+@dataclass
+class Structure:
+    id:             str
+    name:           str
+    structure_type: str
+    position:       Tuple[int, int]
+    faction_id:     Optional[str] = None   # None = neutral / unowned
+    status:         str = STATUS_ACTIVE
+    supply_range:   int = 0
+    notes:          str = ""
+
+    @classmethod
+    def new(cls, name: str, structure_type: str, position: Tuple[int, int],
+            faction_id: Optional[str] = None, supply_range: int = 0) -> "Structure":
+        return cls(id=new_id(), name=name, structure_type=structure_type,
+                   position=position, faction_id=faction_id, supply_range=supply_range)
+
+    def to_dict(self) -> dict:
+        d = self.__dict__.copy()
+        d["position"] = list(d["position"])
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Structure":
+        d = d.copy()
+        d["position"] = tuple(d["position"])
+        return cls(**d)
+
+
 # ── Campaign ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -145,6 +176,8 @@ class Campaign:
     factions:     Dict[str, Faction]             = field(default_factory=dict)
     units:        Dict[str, Unit]                = field(default_factory=dict)
     missions:     Dict[str, Mission]             = field(default_factory=dict)
+    structures:   Dict[str, "Structure"]         = field(default_factory=dict)
+    hex_notes:    Dict[str, str]                 = field(default_factory=dict)  # "q,r" → text
     gm_notes:     str                            = ""
 
     # Operational sub-maps cached by strategic hex key "q,r"
@@ -168,6 +201,8 @@ class Campaign:
             "factions":     {k: v.to_dict() for k, v in self.factions.items()},
             "units":        {k: v.to_dict() for k, v in self.units.items()},
             "missions":     {k: v.to_dict() for k, v in self.missions.items()},
+            "structures":   {k: v.to_dict() for k, v in self.structures.items()},
+            "hex_notes":    dict(self.hex_notes),
             "op_maps":      {
                 mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
                 for mk, mv in self.op_maps.items()
@@ -200,7 +235,9 @@ class Campaign:
             terrain_map  = parse_tmap(d.get("terrain_map", {})),
             factions     = {k: Faction.from_dict(v) for k, v in d.get("factions", {}).items()},
             units        = {k: Unit.from_dict(v)    for k, v in d.get("units",    {}).items()},
-            missions     = {k: Mission.from_dict(v) for k, v in d.get("missions", {}).items()},
+            missions     = {k: Mission.from_dict(v)   for k, v in d.get("missions",   {}).items()},
+            structures   = {k: Structure.from_dict(v) for k, v in d.get("structures", {}).items()},
+            hex_notes    = d.get("hex_notes", {}),
             op_maps      = {
                 mk: parse_tmap(mv)
                 for mk, mv in d.get("op_maps", {}).items()

@@ -77,6 +77,21 @@ def hex_ring(center: Hex, radius: int) -> List[Hex]:
     return results
 
 
+def hex_line(a: Hex, b: Hex) -> List[Hex]:
+    """Return all hexes on the straight line from a to b (inclusive)."""
+    n = hex_distance(a, b)
+    if n == 0:
+        return [a]
+    results = []
+    for i in range(n + 1):
+        t = i / n
+        fq = a.q * (1 - t) + b.q * t
+        fr = a.r * (1 - t) + b.r * t
+        fs = a.s * (1 - t) + b.s * t
+        results.append(_hex_round(fq, fr))
+    return results
+
+
 def hex_range(center: Hex, radius: int) -> List[Hex]:
     """All hexes within `radius` steps of center (inclusive)."""
     results: List[Hex] = []

@@ -11,7 +11,7 @@ import pygame
 from game.constants import SCALE_STRATEGIC
 from game.hex_grid import Hex, hex_to_pixel
 from game.models import Campaign
-from game.vision import visible_hexes, visible_units, visible_missions
+from game.vision import visible_hexes, visible_units, visible_missions, visible_structures
 from game.campaign import update_explored
 from ui.colors import BG, TEXT, TEXT_BRIGHT, PANEL_DARK, BORDER
 from ui.renderer import MapRenderer
@@ -86,20 +86,24 @@ def export_view(
 
     # Determine fog set + filtered units/missions
     if faction_id is None:
-        fog_set        = None
-        explored_set   = None
-        units_save     = None
-        missions_save  = None
+        fog_set         = None
+        explored_set    = None
+        units_save      = None
+        missions_save   = None
+        structures_save = None
     else:
         update_explored(campaign)
-        fog_set        = visible_hexes(campaign, faction_id)
-        explored_set   = campaign.explored_hexes.get(faction_id, set())
-        visible        = visible_units(campaign, faction_id, fog_set)
-        vis_missions   = {m.id: m for m in visible_missions(campaign, faction_id, fog_set)}
-        units_save     = campaign.units
-        missions_save  = campaign.missions
-        campaign.units    = visible
-        campaign.missions = vis_missions
+        fog_set          = visible_hexes(campaign, faction_id)
+        explored_set     = campaign.explored_hexes.get(faction_id, set())
+        visible          = visible_units(campaign, faction_id, fog_set)
+        vis_missions     = {m.id: m for m in visible_missions(campaign, faction_id, fog_set)}
+        vis_structures   = visible_structures(campaign, faction_id, fog_set)
+        units_save       = campaign.units
+        missions_save    = campaign.missions
+        structures_save  = campaign.structures
+        campaign.units      = visible
+        campaign.missions   = vis_missions
+        campaign.structures = vis_structures
 
     # Draw into a sub-rect
     map_rect = pygame.Rect(0, header_h, width, height - header_h)
@@ -120,9 +124,11 @@ def export_view(
 
     # Restore
     if units_save is not None:
-        campaign.units    = units_save
+        campaign.units      = units_save
     if missions_save is not None:
-        campaign.missions = missions_save
+        campaign.missions   = missions_save
+    if structures_save is not None:
+        campaign.structures = structures_save
 
     # Save
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in (faction_name.split("—")[0].strip()))

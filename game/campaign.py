@@ -7,7 +7,7 @@ from typing import Optional
 
 from game.constants import DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT
 from game.map_gen import generate_map, generate_operational_map, generate_tactical_map
-from game.models import Campaign, Faction, Unit, Mission, new_id
+from game.models import Campaign, Faction, Unit, Mission, Structure, new_id
 from game.constants import *
 
 SAVES_DIR = Path(__file__).parent.parent / "saves"
@@ -109,6 +109,22 @@ def add_unit(
     return u
 
 
+def add_structure(
+    campaign:       Campaign,
+    name:           str,
+    structure_type: str,
+    position:       tuple,
+    faction_id:     Optional[str] = None,
+    supply_range:   int = 0,
+) -> "Structure":
+    s = Structure.new(name, structure_type, position, faction_id, supply_range)
+    campaign.structures[s.id] = s
+    owner = campaign.factions[faction_id].name if faction_id and faction_id in campaign.factions else "neutral"
+    log_event(campaign, "structure_built",
+              f"{s.structure_type} '{s.name}' placed ({owner})")
+    return s
+
+
 def add_mission(
     campaign:     Campaign,
     name:         str,
@@ -123,9 +139,23 @@ def add_mission(
 
 def next_turn(campaign: Campaign) -> int:
     update_explored(campaign)
+    _log_supply_warnings(campaign)
     campaign.current_turn += 1
     log_event(campaign, "turn_advanced", f"Turn advanced to {campaign.current_turn}")
     return campaign.current_turn
+
+
+def _log_supply_warnings(campaign: Campaign) -> None:
+    from game.vision import supplied_units, has_supply_sources
+    for faction_id in campaign.factions:
+        if not has_supply_sources(campaign, faction_id):
+            continue
+        sup = supplied_units(campaign, faction_id)
+        for uid, u in campaign.units.items():
+            if (u.faction_id == faction_id and u.position is not None
+                    and uid not in sup):
+                log_event(campaign, "supply_warning",
+                          f"{u.name} is out of supply range")
 
 
 def update_explored(campaign: Campaign) -> None:

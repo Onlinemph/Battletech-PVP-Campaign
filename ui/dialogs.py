@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pygame
 
-from game.constants import MISSION_STATUSES
+from game.constants import MISSION_STATUSES, STRUCTURE_TYPES, STRUCTURE_SUPPLY_RANGES
 from game.models import Mission, Faction
 from ui.colors import (BG, PANEL_BG, PANEL_DARK, BORDER, BORDER_LT,
                         BTN_NORMAL, BTN_HOVER, BTN_ACTIVE, BTN_DANGER,
@@ -841,4 +841,122 @@ class AdjustFundsDialog(Dialog):
         self.inp_amount.draw(surface)
         self.inp_reason.draw(surface)
         self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+
+
+# ── Add Structure dialog ──────────────────────────────────────────────────────
+
+class AddStructureDialog(Dialog):
+    W, H = 520, 330
+
+    def __init__(self, screen_size: Tuple[int, int], hex_pos: tuple,
+                 factions: Dict[str, "Faction"]):
+        super().__init__(f"Place Structure at hex {hex_pos}", screen_size)
+        self.hex_pos  = hex_pos
+        self._fac_ids = [""] + list(factions.keys())
+        fac_names     = ["(Neutral)"] + [f.name for f in factions.values()]
+
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.inp_name     = TextInput(pygame.Rect(x + 140, y,       330, 28), self.font,
+                                      placeholder="e.g. Fort Defiance")
+        self.dd_type      = DropDown( pygame.Rect(x + 140, y + 38,  220, 28), STRUCTURE_TYPES, self.font)
+        self.dd_faction   = DropDown( pygame.Rect(x + 140, y + 76,  220, 28), fac_names,       self.font)
+        default_supply    = STRUCTURE_SUPPLY_RANGES.get(STRUCTURE_TYPES[0], 0)
+        self.inp_supply   = TextInput(pygame.Rect(x + 140, y + 114,  80, 28), self.font,
+                                      value=str(default_supply))
+        self.inp_notes    = TextInput(pygame.Rect(x + 140, y + 152, 330, 28), self.font,
+                                      placeholder="GM notes")
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Place",  self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+        self._last_type = STRUCTURE_TYPES[0]
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_type.handle_event(event):    return
+        if self.dd_faction.handle_event(event): return
+        self.inp_name.handle_event(event)
+        self.inp_supply.handle_event(event)
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+
+        # Auto-fill supply range when type changes
+        if self.dd_type.value != self._last_type:
+            self._last_type = self.dd_type.value
+            self.inp_supply.value = str(STRUCTURE_SUPPLY_RANGES.get(self.dd_type.value, 0))
+
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_ok.clicked:
+            try:
+                supply = int(self.inp_supply.value or 0)
+            except ValueError:
+                supply = 0
+            self.result = dict(
+                name           = self.inp_name.value.strip() or self.dd_type.value,
+                structure_type = self.dd_type.value,
+                faction_id     = self._fac_ids[self.dd_faction.selected] or None,
+                supply_range   = supply,
+                notes          = self.inp_notes.value.strip(),
+                position       = self.hex_pos,
+            )
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Name:",         x, y + 7)
+        self.label(surface, "Type:",         x, y + 45)
+        self.label(surface, "Owner:",        x, y + 83)
+        self.label(surface, "Supply Range:", x, y + 121)
+        self.label(surface, "Notes:",        x, y + 159)
+        self.inp_name.draw(surface)
+        self.inp_supply.draw(surface)
+        self.inp_notes.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+        self.dd_type.draw(surface)
+        self.dd_faction.draw(surface)
+        self.dd_type.draw_overlay(surface)
+        self.dd_faction.draw_overlay(surface)
+
+
+# ── Hex Note dialog ───────────────────────────────────────────────────────────
+
+class HexNoteDialog(Dialog):
+    W, H = 460, 190
+
+    def __init__(self, screen_size: Tuple[int, int], hex_pos: tuple, existing: str = ""):
+        super().__init__(f"GM Note — hex {hex_pos}", screen_size)
+        self.hex_pos = hex_pos
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.inp_note   = TextInput(pygame.Rect(x, y, self.rect.width - 40, 28), self.font,
+                                    placeholder="Secret note visible only in GM view",
+                                    value=existing)
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Save",   self.font)
+        self.btn_clear  = Button(pygame.Rect(self.rect.right - 310, btn_y, 90, 32), "Clear",  self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        self.inp_note.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_clear.handle_event(event)
+        self.btn_cancel.handle_event(event)
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_clear.clicked:
+            self.result = dict(text="", position=self.hex_pos)
+            self.done = True
+        if self.btn_ok.clicked:
+            self.result = dict(text=self.inp_note.value.strip(), position=self.hex_pos)
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Note (GM eyes only):", x, y - 16, color=(200, 200, 100))
+        self.inp_note.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_clear.draw(surface)
         self.btn_cancel.draw(surface)
