@@ -145,3 +145,44 @@ DEFAULT_MOVE_RANGE = {
     UNIT_INFANTRY:  2,
     UNIT_DROPSHIP:  2,
 }
+
+# ── Economy ───────────────────────────────────────────────────────────────────
+
+# C-Bills generated per controlled hex per day
+TERRAIN_INCOME = {
+    TERRAIN_URBAN:       50_000,
+    TERRAIN_INDUSTRIAL:  75_000,
+    TERRAIN_PLAINS:       5_000,
+    TERRAIN_HILLS:        4_000,
+    TERRAIN_FOREST:       3_000,
+    TERRAIN_MOUNTAINS:    2_000,
+    TERRAIN_COAST:        3_000,
+    TERRAIN_DESERT:       1_000,
+    TERRAIN_ARCTIC:       1_000,
+    TERRAIN_VOLCANIC:         0,
+    TERRAIN_WATER:            0,
+    TERRAIN_DEEP_WATER:       0,
+}
+
+# Additional C-Bills per owned structure per day
+STRUCTURE_INCOME = {
+    STRUCTURE_CITY:      200_000,
+    STRUCTURE_TOWN:       50_000,
+    STRUCTURE_VILLAGE:    10_000,
+    STRUCTURE_FACTORY:   150_000,
+    STRUCTURE_SPACEPORT: 100_000,
+    STRUCTURE_BASE:       10_000,
+    STRUCTURE_FOB:         5_000,
+    STRUCTURE_DEPOT:      20_000,
+    STRUCTURE_AIRFIELD:   25_000,
+    STRUCTURE_COMMS:       5_000,
+}
+
+# C-Bills maintenance cost per unit per day
+UNIT_MAINTENANCE = {
+    UNIT_MECH:      10_000,
+    UNIT_VEHICLE:    5_000,
+    UNIT_AEROSPACE: 15_000,
+    UNIT_INFANTRY:   2_000,
+    UNIT_DROPSHIP:  20_000,
+}

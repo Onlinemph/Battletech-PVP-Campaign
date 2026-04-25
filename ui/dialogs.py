@@ -352,10 +352,10 @@ class AddFactionDialog(Dialog):
 class AddUnitDialog(Dialog):
     W, H = 520, 410
 
-    # Default walk/run MP by unit type
+    # Default walk/run MP by unit type (Aerospace uses thrust points as proxy)
     _DEFAULT_MP = {
         "BattleMech": (4, 6), "Vehicle": (4, 6),
-        "Infantry": (1, 2), "Aerospace": (0, 0), "DropShip": (1, 2),
+        "Infantry": (1, 2), "Aerospace": (6, 9), "DropShip": (2, 3),
     }
 
     def __init__(self, screen_size: Tuple[int, int], factions: list, hex_pos: tuple):

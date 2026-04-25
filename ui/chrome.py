@@ -56,6 +56,7 @@ def _event_icon(event: str) -> str:
         "sensor_contact":      "[~]",
         "op_turn_advanced":    "[h]",
         "op_contact":          "[X]",
+        "income":              "[$]",
     }.get(event, "  ")
 
 
@@ -222,7 +223,18 @@ def draw_sidebar(
         pygame.draw.rect(surface, adj_bg, adj_rect, border_radius=2)
         surface.blit(font_sm.render("[+/-]", True, BTN_TEXT), (adj_rect.x + 2, adj_rect.y + 1))
         boxes.append(Hitbox("adjust_funds", adj_rect, f.id))
-        cy += 18
+        cy += 16
+        # Daily income projection
+        from game.campaign import compute_daily_income
+        bd = compute_daily_income(campaign, f.id)
+        net_color = TEXT_GOOD if bd["net"] >= 0 else TEXT_BAD
+        inc_k  = bd["income"]      // 1000
+        mnt_k  = bd["maintenance"] // 1000
+        sign   = "+" if bd["net"] >= 0 else ""
+        net_k  = bd["net"]         // 1000
+        daily  = f"  +{inc_k}k / -{mnt_k}k = {sign}{net_k}k/day"
+        surface.blit(font_sm.render(daily, True, net_color), (x + 24, cy + 1))
+        cy += 14
 
     if not campaign.factions:
         surface.blit(font_sm.render("(none yet — click +Faction)", True, TEXT_DIM), (x + 12, cy))

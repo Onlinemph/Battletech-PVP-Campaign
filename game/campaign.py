@@ -198,6 +198,7 @@ def next_phase(campaign: Campaign) -> tuple:
         update_explored(campaign)
         _log_supply_warnings(campaign)
         _update_territory(campaign)
+        _process_income(campaign)
         campaign.current_turn += 1
 
     _detect_contacts(campaign)
@@ -318,6 +319,38 @@ def update_explored(campaign: Campaign) -> None:
         if faction_id not in campaign.explored_hexes:
             campaign.explored_hexes[faction_id] = set()
         campaign.explored_hexes[faction_id].update(vis)
+
+
+def compute_daily_income(campaign: Campaign, faction_id: str) -> dict:
+    """Return {income, maintenance, net} for a faction for one day."""
+    income = 0
+    for key, fid in campaign.hex_control.items():
+        if fid == faction_id:
+            q, r = (int(x) for x in key.split(","))
+            terrain = campaign.terrain_map.get((q, r), "")
+            income += TERRAIN_INCOME.get(terrain, 0)
+    for s in campaign.structures.values():
+        if s.faction_id == faction_id and s.status == STATUS_ACTIVE:
+            income += STRUCTURE_INCOME.get(s.structure_type, 0)
+    maintenance = sum(
+        UNIT_MAINTENANCE.get(u.unit_type, 0)
+        for u in campaign.units.values()
+        if u.faction_id == faction_id
+        and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)
+    )
+    return {"income": income, "maintenance": maintenance, "net": income - maintenance}
+
+
+def _process_income(campaign: Campaign) -> None:
+    """Apply daily income and maintenance to all factions at end of day."""
+    for faction_id, f in campaign.factions.items():
+        bd = compute_daily_income(campaign, faction_id)
+        f.resources += bd["net"]
+        sign = "+" if bd["net"] >= 0 else ""
+        log_event(campaign, "income",
+                  f"{f.name}: +{bd['income']:,} income  "
+                  f"-{bd['maintenance']:,} maint  "
+                  f"= {sign}{bd['net']:,} C-Bills")
 
 
 def _update_territory(campaign: Campaign) -> None:

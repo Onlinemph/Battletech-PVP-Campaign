@@ -26,7 +26,8 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
                             add_faction, add_unit, add_mission, next_turn, next_phase,
                             next_op_turn, get_operational_map, log_event, add_structure,
                             add_group, add_objective, log_combat,
-                            walk_mp_to_strategic, walk_mp_to_op_range)
+                            walk_mp_to_strategic, walk_mp_to_op_range,
+                            compute_daily_income)
 from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
@@ -140,13 +141,21 @@ class App:
                            self.height - TOOLBAR_H - STATUSBAR_H)
 
     def _group_walk_mp(self, unit) -> int:
-        """Return effective walk_mp — minimum across all active members of unit's group."""
+        """Return effective walk_mp — minimum across active ground members of unit's group.
+        Aerospace and DropShips don't constrain formation ground speed.
+        Falls back to DEFAULT_MOVE_RANGE when walk_mp is 0 (non-walking unit types)."""
+        _GROUND = (UNIT_MECH, "Vehicle", "Infantry")
+        def _effective(u) -> int:
+            return u.walk_mp if u.walk_mp > 0 else DEFAULT_MOVE_RANGE.get(u.unit_type, 3)
         if not unit.group_id:
-            return unit.walk_mp
+            return _effective(unit)
         members = [u for u in self.campaign.units.values()
                    if u.group_id == unit.group_id
-                   and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
-        return min(u.walk_mp for u in members) if members else unit.walk_mp
+                   and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)
+                   and u.unit_type in _GROUND]
+        if not members:
+            return _effective(unit)
+        return min(_effective(u) for u in members)
 
     # ── main menu (blank state) ──────────────────────────────────────────────
 
