@@ -5,7 +5,7 @@ from game.hex_grid import Hex, hex_range, hex_line, hex_distance
 from game.models import Campaign, Unit
 from game.constants import (STATUS_DESTROYED, STATUS_RETREATED,
                              TERRAIN_FOREST, UNIT_AEROSPACE,
-                             UNIT_DROPSHIP, DROPSHIP_SUPPLY_RANGE)
+                             UNIT_DROPSHIP, DROPSHIP_SUPPLY_RANGE, PHASE_NIGHT)
 from game.terrain import TERRAIN
 
 
@@ -30,6 +30,8 @@ def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
         center   = Hex.from_tuple(unit.position)
         is_aero  = unit.unit_type == UNIT_AEROSPACE
         vrange   = unit.vision_range
+        if campaign.current_phase == PHASE_NIGHT and not is_aero:
+            vrange = max(0, vrange - 1)
 
         for h in hex_range(center, vrange):
             key  = h.to_tuple()
@@ -56,6 +58,15 @@ def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
             visible.add(key)
 
     return visible
+
+
+def get_contact_hexes(campaign: Campaign) -> Dict[Tuple[int, int], list]:
+    """Return dict of hex → [faction_ids] for hexes with 2+ factions present."""
+    hex_factions: Dict[Tuple[int, int], set] = {}
+    for u in campaign.units.values():
+        if u.position and u.status not in (STATUS_DESTROYED, STATUS_RETREATED):
+            hex_factions.setdefault(u.position, set()).add(u.faction_id)
+    return {pos: list(fids) for pos, fids in hex_factions.items() if len(fids) >= 2}
 
 
 def visible_units(

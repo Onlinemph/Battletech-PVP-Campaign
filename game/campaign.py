@@ -175,13 +175,79 @@ def log_combat(campaign: Campaign, position: tuple, attacker_fid: str,
     return entry
 
 
+def next_phase(campaign: Campaign) -> tuple:
+    """Advance Morning→Afternoon→Night→next Day Morning.
+    End-of-day hooks run only on night→morning transition."""
+    idx = PHASES.index(campaign.current_phase) if campaign.current_phase in PHASES else 0
+    if idx + 1 < len(PHASES):
+        campaign.current_phase = PHASES[idx + 1]
+    else:
+        campaign.current_phase = PHASE_MORNING
+        update_explored(campaign)
+        _log_supply_warnings(campaign)
+        _update_territory(campaign)
+        campaign.current_turn += 1
+
+    _detect_contacts(campaign)
+    _detect_sensor_contacts(campaign)
+    abbr = PHASE_ABBR.get(campaign.current_phase, "??")
+    log_event(campaign, f"phase_{campaign.current_phase}",
+              f"Day {campaign.current_turn} · {abbr} begins")
+    return campaign.current_turn, campaign.current_phase
+
+
 def next_turn(campaign: Campaign) -> int:
-    update_explored(campaign)
-    _log_supply_warnings(campaign)
-    _update_territory(campaign)
-    campaign.current_turn += 1
-    log_event(campaign, "turn_advanced", f"Turn advanced to {campaign.current_turn}")
+    """Advance a full day (3 phases). Kept for backward compatibility."""
+    for _ in range(3):
+        next_phase(campaign)
     return campaign.current_turn
+
+
+def _detect_contacts(campaign: Campaign) -> None:
+    """Detect hexes shared by 2+ factions and log new contacts."""
+    hex_factions: dict = {}
+    for u in campaign.units.values():
+        if u.position and u.status not in (STATUS_DESTROYED, STATUS_RETREATED):
+            hex_factions.setdefault(u.position, set()).add(u.faction_id)
+
+    new_contacts: dict = {}
+    for pos, fids in hex_factions.items():
+        if len(fids) >= 2:
+            key = f"{pos[0]},{pos[1]}"
+            new_contacts[key] = list(fids)
+
+    for key, fids in new_contacts.items():
+        if key not in campaign.active_contacts:
+            names = [campaign.factions[f].name if f in campaign.factions else f
+                     for f in fids]
+            q, r = (int(x) for x in key.split(","))
+            log_event(campaign, "contact_detected",
+                      f"Contact ({q},{r}): {' vs '.join(names)}")
+
+    campaign.active_contacts = new_contacts
+
+
+def _detect_sensor_contacts(campaign: Campaign) -> None:
+    """Log when faction A can see an enemy unit in a different hex."""
+    from game.vision import visible_hexes
+    faction_ids = list(campaign.factions.keys())
+    reported: set = set()
+    for i, fid_a in enumerate(faction_ids):
+        vis_a = visible_hexes(campaign, fid_a)
+        for fid_b in faction_ids[i + 1:]:
+            for u in campaign.units.values():
+                if (u.faction_id == fid_b and u.position is not None
+                        and u.position in vis_a
+                        and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)):
+                    pair_key = tuple(sorted([fid_a, fid_b]))
+                    if pair_key not in reported:
+                        fa = campaign.factions.get(fid_a)
+                        fb = campaign.factions.get(fid_b)
+                        log_event(campaign, "sensor_contact",
+                                  f"{fa.name if fa else fid_a} sensors detect "
+                                  f"{fb.name if fb else fid_b}")
+                        reported.add(pair_key)
+                    break
 
 
 def _log_supply_warnings(campaign: Campaign) -> None:
@@ -226,6 +292,11 @@ def _update_territory(campaign: Campaign) -> None:
 
 
 def log_event(campaign: Campaign, event: str, detail: str) -> None:
-    campaign.event_log.append({"turn": campaign.current_turn, "event": event, "detail": detail})
+    campaign.event_log.append({
+        "turn":   campaign.current_turn,
+        "phase":  campaign.current_phase,
+        "event":  event,
+        "detail": detail,
+    })
     if len(campaign.event_log) > 100:
         campaign.event_log = campaign.event_log[-100:]

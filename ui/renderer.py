@@ -165,6 +165,7 @@ class MapRenderer:
         selected:       Optional[Tuple[int, int]] = None,
         highlight_hexes: Optional[Set[Tuple[int, int]]] = None,
         supply_set:     Optional[Set[str]] = None,   # unit IDs that are supplied
+        contact_hexes:  Optional[Dict[Tuple[int, int], list]] = None,
     ):
         self.surface         = surface
         self.rect            = rect
@@ -179,6 +180,7 @@ class MapRenderer:
         self.selected        = selected
         self.highlight_hexes = highlight_hexes
         self.supply_set      = supply_set
+        self.contact_hexes   = contact_hexes
 
         self._font_sm = pygame.font.SysFont("monospace", max(9, int(hex_size * 0.55)), bold=True)
         self._font_co = pygame.font.SysFont("monospace", max(7, int(hex_size * 0.35)))
@@ -313,6 +315,18 @@ class MapRenderer:
             key = h.to_tuple()
             if key in units_by_hex:
                 self._draw_units(h, units_by_hex[key])
+
+        # Contact hex warning borders
+        if self.contact_hexes and self.scale == SCALE_STRATEGIC:
+            for h, _ in hexes:
+                if h.to_tuple() in self.contact_hexes:
+                    self._draw_hex_outline(h, (220, 50, 50), 3)
+                    cx_h, cy_h = self.hex_center(h)
+                    r = max(4, int(self.hex_size * 0.12))
+                    pygame.draw.line(self.surface, (255, 80, 80),
+                                     (int(cx_h) - r, int(cy_h)), (int(cx_h) + r, int(cy_h)), 2)
+                    pygame.draw.line(self.surface, (255, 80, 80),
+                                     (int(cx_h), int(cy_h) - r), (int(cx_h), int(cy_h) + r), 2)
 
         # Draw hover / selection overlay
         if self.hover is not None and Hex.from_tuple(self.hover).to_tuple() in {h.to_tuple() for h, _ in hexes}:

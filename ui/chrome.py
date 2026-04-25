@@ -6,7 +6,8 @@ from typing import Dict, List, Optional, Tuple
 import pygame
 
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
-                             HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M)
+                             HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
+                             PHASE_COLOR, PHASE_ABBR, PHASE_MORNING)
 from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
@@ -41,11 +42,16 @@ def _event_icon(event: str) -> str:
         "funds_adjusted":     "[$]",
         "structure_built":    "[S]",
         "supply_warning":     "[!]",
-        "territory_captured": "[T]",
-        "group_added":        "[G]",
-        "combat_resolved":    "[!]",
-        "objective_placed":   "[*]",
-        "objective_resolved": "[*]",
+        "territory_captured":  "[T]",
+        "group_added":         "[G]",
+        "combat_resolved":     "[C]",
+        "objective_placed":    "[*]",
+        "objective_resolved":  "[*]",
+        "phase_morning":       "[AM]",
+        "phase_afternoon":     "[PM]",
+        "phase_night":         "[**]",
+        "contact_detected":    "[!!]",
+        "sensor_contact":      "[~]",
     }.get(event, "  ")
 
 
@@ -68,6 +74,7 @@ def draw_toolbar(
     turn:         int,
     campaign_name: str,
     hover_pos:    Tuple[int, int],
+    phase:        str = PHASE_MORNING,
 ) -> List[Hitbox]:
     """
     Draw top toolbar. Returns list of clickable Hitboxes:
@@ -126,15 +133,17 @@ def draw_toolbar(
     btn("add_faction", "+Faction", 82)
     sep()
 
-    # Turn counter
-    turn_rect = pygame.Rect(x, y, 110, TOOLBAR_H - 14)
+    # Day / Phase counter
+    phase_color = PHASE_COLOR.get(phase, (120, 120, 130))
+    abbr        = PHASE_ABBR.get(phase, "??")
+    turn_rect   = pygame.Rect(x, y, 160, TOOLBAR_H - 14)
     pygame.draw.rect(surface, (40, 40, 50), turn_rect, border_radius=3)
-    pygame.draw.rect(surface, BORDER_LT, turn_rect, 1, border_radius=3)
-    t_lbl = font.render(f"Turn {turn}", True, TEXT_BRIGHT)
+    pygame.draw.rect(surface, phase_color, turn_rect, 1, border_radius=3)
+    t_lbl = font.render(f"Day {turn}  ·  {abbr}", True, phase_color)
     surface.blit(t_lbl, t_lbl.get_rect(center=turn_rect.center))
-    x += 114
+    x += 164
 
-    btn("next_turn", "Next >>", 82)
+    btn("next_turn", "Next Phase >>", 118)
 
     # Right-aligned: campaign name
     name_font = pygame.font.SysFont("monospace", 14, bold=True)
@@ -201,6 +210,24 @@ def draw_sidebar(
         surface.blit(font_sm.render("(none yet — click +Faction)", True, TEXT_DIM), (x + 12, cy))
         cy += 18
     cy += 4
+
+    # ── Contact report ───────────────────────────────────────────────────────
+    contacts = campaign.active_contacts
+    if contacts:
+        pygame.draw.line(surface, (200, 50, 50), (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+        surface.blit(font_h.render("!! CONTACT !!", True, (255, 80, 80)), (x + 12, cy)); cy += 20
+        for key, fids in list(contacts.items())[:4]:
+            q, r = (int(n) for n in key.split(","))
+            row = pygame.Rect(x + 8, cy, width - 16, 20)
+            bg  = BTN_HOVER if row.collidepoint(hover_pos) else (60, 20, 20)
+            pygame.draw.rect(surface, bg, row, border_radius=2)
+            names = [campaign.factions[f].name[:8] if f in campaign.factions else f[:8]
+                     for f in fids]
+            lbl = font_sm.render(f"({q},{r}) {' vs '.join(names)}", True, (255, 120, 120))
+            surface.blit(lbl, (row.x + 8, row.y + 4))
+            boxes.append(Hitbox("contact_hex", row, (q, r)))
+            cy += 22
+        cy += 4
 
     # ── Groups ───────────────────────────────────────────────────────────────
     pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
@@ -427,10 +454,11 @@ def draw_sidebar(
         cy += 16
     else:
         for entry in recent:
-            surface.blit(font_sm.render(f"T{entry['turn']}", True, TEXT_DIM), (x + 12, cy))
+            abbr = PHASE_ABBR.get(entry.get("phase", PHASE_MORNING), "  ")
+            surface.blit(font_sm.render(f"D{entry['turn']}{abbr}", True, TEXT_DIM), (x + 12, cy))
             icon   = _event_icon(entry["event"])
-            detail = entry["detail"][:32]
-            surface.blit(font_sm.render(f"{icon} {detail}", True, TEXT), (x + 36, cy))
+            detail = entry["detail"][:30]
+            surface.blit(font_sm.render(f"{icon} {detail}", True, TEXT), (x + 44, cy))
             cy += 15
 
     # ── Combat log ───────────────────────────────────────────────────────────

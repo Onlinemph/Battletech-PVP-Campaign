@@ -248,6 +248,10 @@ class Campaign:
     objectives:     Dict[str, "Objective"]               = field(default_factory=dict)
     # Engagement records: list of combat dicts (capped at 200)
     combat_log:     List[Dict]                           = field(default_factory=list)
+    # Current time of day within the day
+    current_phase:   str                                 = PHASE_MORNING
+    # Hexes with multi-faction presence: "q,r" → [faction_id, ...]
+    active_contacts: Dict[str, List[str]]                = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -279,7 +283,9 @@ class Campaign:
             "hex_control":  dict(self.hex_control),
             "groups":       {k: v.to_dict() for k, v in self.groups.items()},
             "objectives":   {k: v.to_dict() for k, v in self.objectives.items()},
-            "combat_log":   list(self.combat_log),
+            "combat_log":     list(self.combat_log),
+            "current_phase":  self.current_phase,
+            "active_contacts": dict(self.active_contacts),
         }
         return d
 
@@ -316,7 +322,9 @@ class Campaign:
                 for fid, hexes in d.get("explored_hexes", {}).items()
             },
             hex_control  = d.get("hex_control", {}),
-            groups       = {k: Group.from_dict(v) for k, v in d.get("groups", {}).items()},
-            objectives   = {k: Objective.from_dict(v) for k, v in d.get("objectives", {}).items()},
-            combat_log   = d.get("combat_log", []),
+            groups          = {k: Group.from_dict(v) for k, v in d.get("groups", {}).items()},
+            objectives      = {k: Objective.from_dict(v) for k, v in d.get("objectives", {}).items()},
+            combat_log      = d.get("combat_log", []),
+            current_phase   = d.get("current_phase", PHASE_MORNING),
+            active_contacts = d.get("active_contacts", {}),
         )

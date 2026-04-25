@@ -17,10 +17,10 @@ from game.hex_grid import Hex, pixel_to_hex, hex_to_pixel, axial_to_offset, hex_
 from game.models import Campaign
 from game.terrain import terrain_name
 from game.campaign import (new_campaign, save_campaign, load_campaign, list_saves,
-                            add_faction, add_unit, add_mission, next_turn,
+                            add_faction, add_unit, add_mission, next_turn, next_phase,
                             get_operational_map, log_event, add_structure,
                             add_group, add_objective, log_combat)
-from game.vision import visible_hexes, supplied_units, has_supply_sources
+from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
 from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
@@ -351,8 +351,9 @@ class App:
                 self.dialog = ExportDialog((self.width, self.height), factions)
         elif name == "next_turn":
             if self.campaign:
-                next_turn(self.campaign)
-                self._toast_msg(f"Advanced to turn {self.campaign.current_turn}")
+                day, phase = next_phase(self.campaign)
+                abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
+                self._toast_msg(f"Day {day} · {abbr}")
         elif name == "add_faction":
             self.dialog = AddFactionDialog((self.width, self.height))
         elif name == "add_group":
@@ -427,6 +428,15 @@ class App:
             except ValueError:
                 return
             self.dialog = HexNoteDialog((self.width, self.height), (q, r), existing)
+        elif box.name == "contact_hex":
+            pos = box.data
+            self.selected_hex = pos
+            if self.scale == SCALE_STRATEGIC:
+                self.op_hex = pos
+                self.scale  = SCALE_OPERATIONAL
+                self.pan_x  = (self.width - SIDEBAR_W) / 2
+                self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+                self._toast_msg(f"Contact! Drilling into hex ({pos[0]},{pos[1]})")
         elif box.name == "pay_repair":
             u = self.campaign.units.get(box.data)
             if u:
@@ -606,6 +616,7 @@ class App:
         self._toolbar_boxes = draw_toolbar(
             self.screen, self.width, self.tool, self.scale,
             self.campaign.current_turn, self.campaign.name, mouse_pos,
+            phase=self.campaign.current_phase,
         )
 
         # Map
@@ -642,6 +653,10 @@ class App:
                 for fid in self.campaign.factions:
                     supply_set.update(supplied_units(self.campaign, fid))
 
+        # Contact hexes for red-border overlay and sidebar alert
+        contact_hexes = (get_contact_hexes(self.campaign)
+                         if self.scale == SCALE_STRATEGIC else None)
+
         renderer = MapRenderer(
             surface         = self.screen,
             rect            = rect,
@@ -655,6 +670,7 @@ class App:
             selected        = self.selected_hex,
             highlight_hexes = highlight_hexes,
             supply_set      = supply_set,
+            contact_hexes   = contact_hexes,
         )
         renderer.draw()
 
