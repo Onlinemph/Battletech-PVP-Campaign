@@ -123,22 +123,22 @@ def draw_toolbar(
     sep()
 
     # Tools
-    btn("tool_select",        "Select",       70, active=(active_tool == "select"))
-    btn("tool_move",          "Move",         62, active=(active_tool == "move"))
-    btn("tool_add_unit",      "+Unit",        62, active=(active_tool == "add_unit"))
-    btn("tool_add_mission",   "+Mission",     82, active=(active_tool == "add_mission"))
-    btn("tool_add_structure",  "+Struct",      72, active=(active_tool == "add_structure"))
-    btn("tool_add_objective",  "+Obj",         60, active=(active_tool == "add_objective"))
-    btn("tool_paint_terrain",  "Paint",        62, active=(active_tool == "paint_terrain"))
-    btn("add_group",           "+Group",       70)
-    btn("tool_delete",         "Delete",      66, active=(active_tool == "delete"))
+    btn("tool_select",        "Select",  64, active=(active_tool == "select"))
+    btn("tool_move",          "Move",    54, active=(active_tool == "move"))
+    btn("tool_add_unit",      "+Unit",   56, active=(active_tool == "add_unit"))
+    btn("tool_add_mission",   "+Miss",   58, active=(active_tool == "add_mission"))
+    btn("tool_add_structure", "+Bldg",   58, active=(active_tool == "add_structure"))
+    btn("tool_add_objective", "+Obj",    52, active=(active_tool == "add_objective"))
+    btn("tool_paint_terrain", "Paint",   56, active=(active_tool == "paint_terrain"))
+    btn("add_group",          "+Grp",    52)
+    btn("tool_delete",        "Del",     46, active=(active_tool == "delete"))
     sep()
 
-    btn("view_strategic",   "Strategic",   86, active=(scale == SCALE_STRATEGIC))
-    btn("view_operational", "Operational", 98, active=(scale == SCALE_OPERATIONAL))
+    btn("view_strategic",   "Strat",  56, active=(scale == SCALE_STRATEGIC))
+    btn("view_operational", "Op",     44, active=(scale == SCALE_OPERATIONAL))
     sep()
 
-    btn("add_faction", "+Faction", 82)
+    btn("add_faction", "+Fac", 54)
     sep()
 
     # Day / Phase / Op-turn counter
@@ -146,14 +146,14 @@ def draw_toolbar(
     abbr        = PHASE_ABBR.get(phase, "??")
     if scale == SCALE_OPERATIONAL:
         turn_label = f"D{turn} {abbr}  H{op_turn+1}/{OP_TURNS_PER_PHASE}"
-        turn_w     = 178
-        next_label = "Next Hour >>"
-        next_w     = 118
+        turn_w     = 164
+        next_label = "Hr >>"
+        next_w     = 64
     else:
         turn_label = f"Day {turn}  ·  {abbr}"
-        turn_w     = 160
-        next_label = "Next Phase >>"
-        next_w     = 118
+        turn_w     = 148
+        next_label = "Next >>"
+        next_w     = 74
     turn_rect = pygame.Rect(x, y, turn_w, TOOLBAR_H - 14)
     pygame.draw.rect(surface, (40, 40, 50), turn_rect, border_radius=3)
     pygame.draw.rect(surface, phase_color, turn_rect, 1, border_radius=3)
@@ -162,12 +162,15 @@ def draw_toolbar(
     x += turn_w + 4
 
     btn("next_turn",    next_label, next_w)
-    btn("revert_phase", "< Undo",   72, danger=(not has_undo))
+    btn("revert_phase", "Undo",     54, danger=(not has_undo))
 
-    # Right-aligned: campaign name
-    name_font = pygame.font.SysFont("monospace", 14, bold=True)
-    name_surf = name_font.render(campaign_name, True, TEXT_WARN)
-    surface.blit(name_surf, (width - name_surf.get_width() - 16, 14))
+    # Campaign name right-aligned — only drawn if it won't overlap buttons
+    name_font = pygame.font.SysFont("monospace", 13, bold=True)
+    short_name = campaign_name[:18] + "…" if len(campaign_name) > 18 else campaign_name
+    name_surf  = name_font.render(short_name, True, TEXT_WARN)
+    name_x = width - name_surf.get_width() - 10
+    if name_x > x + 6:
+        surface.blit(name_surf, (name_x, 14))
 
     return boxes
 

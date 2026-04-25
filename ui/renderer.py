@@ -607,6 +607,9 @@ class MapRenderer:
         else:
             radius = min(max(4, int(self.hex_size * 0.32)), 22)
 
+        # Font sized to the circle, not to hex_size — prevents giant "M" at high zoom
+        unit_font = pygame.font.SysFont("monospace", max(7, int(radius * 1.1)), bold=True)
+
         for (gx, gy), g_units in groups.items():
             n = len(g_units)
             offsets = _unit_offsets(n, radius * 1.4)
@@ -619,7 +622,7 @@ class MapRenderer:
                 unsupplied = (self.supply_set is not None
                                and unit.id not in self.supply_set)
                 _draw_unit_circle(self.surface, (ux, uy), radius, fc, status_border,
-                                  UNIT_LABEL.get(unit.unit_type, "?"), self._font_sm,
+                                  UNIT_LABEL.get(unit.unit_type, "?"), unit_font,
                                   unit.status == STATUS_DESTROYED, unsupplied)
 
     # ── export surface ────────────────────────────────────────────────────────
