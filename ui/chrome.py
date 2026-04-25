@@ -123,8 +123,9 @@ def draw_toolbar(
     btn("tool_add_unit",      "+Unit",        62, active=(active_tool == "add_unit"))
     btn("tool_add_mission",   "+Mission",     82, active=(active_tool == "add_mission"))
     btn("tool_add_structure",  "+Struct",      72, active=(active_tool == "add_structure"))
-    btn("tool_add_objective",  "+Obj",        60, active=(active_tool == "add_objective"))
-    btn("add_group",           "+Group",      70)
+    btn("tool_add_objective",  "+Obj",         60, active=(active_tool == "add_objective"))
+    btn("tool_paint_terrain",  "Paint",        62, active=(active_tool == "paint_terrain"))
+    btn("add_group",           "+Group",       70)
     btn("tool_delete",         "Delete",      66, active=(active_tool == "delete"))
     sep()
 

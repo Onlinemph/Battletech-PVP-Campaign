@@ -13,7 +13,11 @@ import pygame
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              DEFAULT_VISION, UNIT_MECH,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
-                             DEFAULT_MOVE_RANGE)
+                             DEFAULT_MOVE_RANGE,
+                             TERRAIN_PLAINS, TERRAIN_FOREST, TERRAIN_HILLS,
+                             TERRAIN_MOUNTAINS, TERRAIN_URBAN, TERRAIN_INDUSTRIAL,
+                             TERRAIN_DESERT, TERRAIN_ARCTIC, TERRAIN_WATER,
+                             TERRAIN_COAST, TERRAIN_DEEP_WATER, TERRAIN_VOLCANIC)
 from game.hex_grid import Hex, pixel_to_hex, hex_to_pixel, axial_to_offset, hex_range
 from game.models import Campaign
 from game.terrain import terrain_name
@@ -65,9 +69,23 @@ class App:
         self.move_source_unit: Optional[str] = None  # when using move tool
 
         # Mouse pan
-        self._drag_active  = False
-        self._drag_start   = (0, 0)
-        self._pan_start    = (0.0, 0.0)
+        self._drag_active        = False
+        self._drag_start         = (0, 0)
+        self._pan_start          = (0.0, 0.0)
+        self._right_click_start: Optional[tuple] = None
+
+        # Paint tool state
+        self.paint_terrain   = "plains"
+        self._paint_dragging = False
+
+        # Right-click context menu
+        self._ctx_menu: Optional[dict] = None   # {pos, hex_pos, items: [(label,fn)]}
+
+        # Keybinding help overlay
+        self._show_help = False
+
+        # Terrain palette hitboxes (rebuilt each frame when paint tool active)
+        self._palette_boxes: list = []
 
         # Modal dialog
         self.dialog = None
@@ -177,6 +195,25 @@ class App:
             return
 
         if event.type == pygame.MOUSEBUTTONDOWN:
+            # Dismiss context menu on any click
+            if self._ctx_menu is not None:
+                for label, fn in self._ctx_menu.get("items", []):
+                    r = self._ctx_menu.get("_rects", {}).get(label)
+                    if r and r.collidepoint(event.pos):
+                        fn()
+                        self._ctx_menu = None
+                        return
+                self._ctx_menu = None
+                return
+
+            # Terrain palette (when paint tool active)
+            if self.tool == "paint_terrain":
+                for pb in self._palette_boxes:
+                    if pb.rect.collidepoint(event.pos):
+                        self.paint_terrain = pb.data
+                        self._toast_msg(f"Paint: {pb.data}")
+                        return
+
             # Toolbar
             for box in self._toolbar_boxes:
                 if box.rect.collidepoint(event.pos):
@@ -192,20 +229,30 @@ class App:
                 return
             # Map area
             if event.button == 1:
+                self._paint_dragging = (self.tool == "paint_terrain")
                 self._on_map_click(event.pos)
             elif event.button == 3:
-                # Right-drag pan
                 self._drag_active = True
                 self._drag_start  = event.pos
                 self._pan_start   = (self.pan_x, self.pan_y)
+                self._right_click_start = event.pos
             elif event.button == 4:
                 self._zoom(+1, event.pos)
             elif event.button == 5:
                 self._zoom(-1, event.pos)
 
         elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 3:
+            if event.button == 1:
+                self._paint_dragging = False
+            elif event.button == 3:
                 self._drag_active = False
+                if self._right_click_start is not None:
+                    dx = event.pos[0] - self._right_click_start[0]
+                    dy = event.pos[1] - self._right_click_start[1]
+                    if abs(dx) < 6 and abs(dy) < 6:
+                        # Tiny movement — show context menu
+                        self._show_context_menu(event.pos)
+                self._right_click_start = None
 
         elif event.type == pygame.MOUSEMOTION:
             if self._drag_active:
@@ -213,11 +260,17 @@ class App:
                 dy = event.pos[1] - self._drag_start[1]
                 self.pan_x = self._pan_start[0] + dx
                 self.pan_y = self._pan_start[1] + dy
+            elif self._paint_dragging:
+                rect = self._map_rect()
+                if rect.collidepoint(event.pos):
+                    self._on_map_click(event.pos)
 
     def _handle_key(self, event: pygame.event.Event) -> None:
         k = event.key
         step = 60
         if k == pygame.K_ESCAPE:
+            self._show_help = False
+            self._ctx_menu  = None
             if self.scale == SCALE_OPERATIONAL:
                 self.scale = SCALE_STRATEGIC
                 self.op_hex = None
@@ -243,6 +296,8 @@ class App:
             self._handle_toolbar("revert_phase")
         elif k == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
             self._handle_toolbar("save")
+        elif event.unicode == "?":
+            self._show_help = not self._show_help
 
     def _zoom(self, delta: int, around: Tuple[int, int]) -> None:
         old_size = self.hex_size
@@ -329,6 +384,15 @@ class App:
                     del self.campaign.units[uid]
                 self._toast_msg(f"Deleted {len(to_del)} unit(s)")
 
+        elif self.tool == "paint_terrain":
+            tmap = self._current_terrain_map()
+            if coord in tmap:
+                tmap[coord] = self.paint_terrain
+                # Invalidate cached operational sub-map for this hex
+                key = f"{coord[0]},{coord[1]}"
+                self.campaign.op_maps.pop(key, None)
+            return  # don't update selected_hex while painting
+
         self.selected_hex = coord
 
     def _current_terrain_map(self) -> dict:
@@ -399,6 +463,9 @@ class App:
             self.faction_filter = None if self.faction_filter == box.data else box.data
         elif box.name == "unit":
             self.selected_unit_id = box.data
+            u = self.campaign.units.get(box.data)
+            if u and u.position:
+                self._center_on(u.position)
         elif box.name == "mission":
             m = self.campaign.missions.get(box.data)
             if m:
@@ -727,6 +794,16 @@ class App:
             hover_hex, tname, self.hex_size, self.scale, self.op_hex, self.tool,
         )
 
+        # Terrain palette (above statusbar, only when paint tool active)
+        if self.tool == "paint_terrain":
+            self._draw_terrain_palette()
+
+        # Overlays (drawn last, on top of everything)
+        if self._ctx_menu:
+            self._draw_context_menu()
+        if self._show_help:
+            self._draw_help_overlay()
+
     def _draw_hover_tooltip(self, pos: Tuple[int, int], units: list) -> None:
         font = pygame.font.SysFont("monospace", 11, bold=True)
         lines = []
@@ -748,6 +825,182 @@ class App:
         for i, (text, color) in enumerate(lines):
             surf = font.render(text, True, color)
             self.screen.blit(surf, (tx + pad, ty + pad // 2 + i * lh))
+
+    # ── context menu ─────────────────────────────────────────────────────────
+
+    def _show_context_menu(self, pos: Tuple[int, int]) -> None:
+        """Build a context menu for the hex under the cursor."""
+        rect   = self._map_rect()
+        if not rect.collidepoint(pos):
+            return
+        ox, oy = rect.x + self.pan_x, rect.y + self.pan_y
+        h = pixel_to_hex(pos[0], pos[1], self.hex_size, ox, oy)
+        coord = h.to_tuple()
+        tmap = self._current_terrain_map()
+        if coord not in tmap:
+            return
+
+        items: list = []
+
+        # Select
+        def _select():
+            self.selected_hex = coord
+        items.append(("Select hex", _select))
+
+        # Drill-down
+        if self.scale == SCALE_STRATEGIC:
+            def _drill():
+                self.op_hex = coord
+                self.scale  = SCALE_OPERATIONAL
+                self.pan_x  = (self.width - SIDEBAR_W) / 2
+                self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+                self._toast_msg(f"Drilling into {coord}")
+            items.append(("Drill down", _drill))
+
+        # Move selected unit here
+        if self.selected_unit_id and self.campaign:
+            u = self.campaign.units.get(self.selected_unit_id)
+            if u:
+                def _move_here(unit=u, c=coord):
+                    unit.position = c
+                    log_event(self.campaign, "unit_moved",
+                              f"{unit.name} moved to ({c[0]},{c[1]})")
+                    self._toast_msg(f"Moved {unit.name} to {c}")
+                items.append((f"Move {u.name[:12]} here", _move_here))
+
+        # Add unit
+        if self.campaign and self.campaign.factions and self.scale == SCALE_STRATEGIC:
+            def _add_unit():
+                faction_list = [(f.name, f.id) for f in self.campaign.factions.values()]
+                self.dialog = AddUnitDialog((self.width, self.height), faction_list, coord)
+            items.append(("Add unit", _add_unit))
+
+        # Hex note
+        if self.campaign:
+            def _note():
+                key = f"{coord[0]},{coord[1]}"
+                existing = self.campaign.hex_notes.get(key, "")
+                self.dialog = HexNoteDialog((self.width, self.height), coord, existing)
+            label = "Edit note" if f"{coord[0]},{coord[1]}" in self.campaign.hex_notes else "Add note"
+            items.append((label, _note))
+
+        self._ctx_menu = {"pos": pos, "hex_pos": coord, "items": items, "_rects": {}}
+
+    def _draw_context_menu(self) -> None:
+        if not self._ctx_menu:
+            return
+        m    = self._ctx_menu
+        font = pygame.font.SysFont("monospace", 12, bold=True)
+        pad  = 8
+        lh   = 20
+        items = m["items"]
+        w = max((font.size(lbl)[0] for lbl, _ in items), default=80) + pad * 2
+        h = len(items) * lh + pad
+        px, py = m["pos"]
+        # Clamp to screen
+        px = min(px, self.width  - SIDEBAR_W - w - 4)
+        py = min(py, self.height - STATUSBAR_H - h - 4)
+        bg = pygame.Surface((w, h), pygame.SRCALPHA)
+        bg.fill((20, 22, 34, 230))
+        self.screen.blit(bg, (px, py))
+        pygame.draw.rect(self.screen, (100, 100, 140), pygame.Rect(px, py, w, h), 1, border_radius=3)
+        mouse = pygame.mouse.get_pos()
+        rects = {}
+        for i, (label, fn) in enumerate(items):
+            r = pygame.Rect(px, py + pad // 2 + i * lh, w, lh)
+            if r.collidepoint(mouse):
+                pygame.draw.rect(self.screen, (50, 60, 100), r)
+            surf = font.render(label, True, (210, 210, 230))
+            self.screen.blit(surf, (r.x + pad, r.y + 3))
+            rects[label] = r
+        m["_rects"] = rects
+
+    # ── terrain palette ──────────────────────────────────────────────────────
+
+    _PAINT_TERRAINS = [
+        TERRAIN_PLAINS, TERRAIN_FOREST, TERRAIN_HILLS, TERRAIN_MOUNTAINS,
+        TERRAIN_COAST,  TERRAIN_WATER,  TERRAIN_DEEP_WATER,
+        TERRAIN_DESERT, TERRAIN_ARCTIC, TERRAIN_URBAN, TERRAIN_INDUSTRIAL,
+        TERRAIN_VOLCANIC,
+    ]
+
+    def _draw_terrain_palette(self) -> None:
+        """Draw a row of terrain swatches above the statusbar when paint tool active."""
+        from game.terrain import TERRAIN, terrain_name
+        font   = pygame.font.SysFont("monospace", 10, bold=True)
+        sw, sh = 52, 18
+        gap    = 3
+        total  = len(self._PAINT_TERRAINS) * (sw + gap) - gap
+        start_x = (self.width - SIDEBAR_W - total) // 2
+        y = self.height - STATUSBAR_H - sh - 4
+        self._palette_boxes = []
+        for i, tid in enumerate(self._PAINT_TERRAINS):
+            tdef = TERRAIN.get(tid)
+            if not tdef:
+                continue
+            x = start_x + i * (sw + gap)
+            r = pygame.Rect(x, y, sw, sh)
+            is_sel = (tid == self.paint_terrain)
+            pygame.draw.rect(self.screen, tdef.color, r, border_radius=2)
+            if is_sel:
+                pygame.draw.rect(self.screen, (255, 255, 255), r, 2, border_radius=2)
+            else:
+                pygame.draw.rect(self.screen, (60, 60, 80), r, 1, border_radius=2)
+            lbl = font.render(tdef.name[:6], True, (255, 255, 255))
+            self.screen.blit(lbl, lbl.get_rect(center=r.center))
+            from ui.chrome import Hitbox
+            self._palette_boxes.append(Hitbox(f"palette_{tid}", r, tid))
+
+    # ── keybinding help overlay ──────────────────────────────────────────────
+
+    def _draw_help_overlay(self) -> None:
+        lines = [
+            ("KEYBOARD SHORTCUTS", None),
+            ("", None),
+            ("Arrow / WASD",        "Pan map"),
+            ("+  /  -",             "Zoom in / out"),
+            ("N",                   "Next phase"),
+            ("Ctrl+Z",              "Undo phase"),
+            ("Ctrl+S",              "Save"),
+            ("Escape",              "Back / deselect"),
+            ("?",                   "Toggle this help"),
+            ("", None),
+            ("MOUSE", None),
+            ("Left-click",          "Use current tool"),
+            ("Right-click",         "Context menu"),
+            ("Right-drag",          "Pan map"),
+            ("Scroll wheel",        "Zoom"),
+            ("", None),
+            ("TOOLS", None),
+            ("Select",              "Click hex → info"),
+            ("Move",                "Click unit then dest"),
+            ("Paint",               "Click/drag terrain"),
+            ("Delete",              "Click unit to remove"),
+        ]
+        font_h = pygame.font.SysFont("monospace", 14, bold=True)
+        font   = pygame.font.SysFont("monospace", 12)
+        pad    = 16
+        lh     = 18
+        w      = 340
+        h      = len(lines) * lh + pad * 2
+        x = (self.width - SIDEBAR_W - w) // 2
+        y = (self.height - h) // 2
+        bg = pygame.Surface((w, h), pygame.SRCALPHA)
+        bg.fill((10, 12, 22, 230))
+        self.screen.blit(bg, (x, y))
+        pygame.draw.rect(self.screen, (120, 120, 160), pygame.Rect(x, y, w, h), 1, border_radius=4)
+        for i, (key, desc) in enumerate(lines):
+            cy = y + pad + i * lh
+            if desc is None:
+                surf = font_h.render(key, True, (200, 180, 100)) if key else None
+            else:
+                k_surf = font.render(key, True, (160, 200, 255))
+                d_surf = font.render(desc, True, (200, 200, 210))
+                self.screen.blit(k_surf, (x + pad, cy))
+                self.screen.blit(d_surf, (x + pad + 140, cy))
+                continue
+            if surf:
+                self.screen.blit(surf, (x + pad, cy))
 
     def _draw_toast(self) -> None:
         if not self._toast:
