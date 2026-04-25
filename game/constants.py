@@ -1,16 +1,13 @@
-# BattleTech scale constants
-MAPSHEET_SIZE_M = 500
-LOW_ALT_HEX_MAPSHEETS = 17
-HIGH_ALT_HEX_LOW_ALT = 36
+# BattleTech scale constants — two tiers
+STRATEGIC_HEX_M   = 18_000   # 18 km per strategic hex (high-altitude overview)
+OPERATIONAL_HEX_M =    500   # 500 m per operational hex (= one BT mapsheet)
 
-LOW_ALT_HEX_SIZE_M = MAPSHEET_SIZE_M * LOW_ALT_HEX_MAPSHEETS   # 8,500 m
-HIGH_ALT_HEX_SIZE_M = LOW_ALT_HEX_SIZE_M * HIGH_ALT_HEX_LOW_ALT  # 306,000 m
+# Keep backward-compat aliases used by chrome.py sidebar
+HIGH_ALT_HEX_SIZE_M = STRATEGIC_HEX_M
+LOW_ALT_HEX_SIZE_M  = OPERATIONAL_HEX_M
 
-# Operational sub-map dimensions (low-altitude hexes per strategic hex)
-OPERATIONAL_RADIUS = 3   # hex-radius, gives 37 hexes ≈ 36
-
-# Tactical sub-map dimensions (mapsheets per low-altitude hex)
-TACTICAL_RADIUS    = 2   # hex-radius, gives 19 hexes ≈ 17
+# Operational sub-map radius (low-altitude hexes visible when drilling into a strategic hex)
+OPERATIONAL_RADIUS = 3   # hex-radius → 37 hexes
 
 SCALE_STRATEGIC   = "strategic"
 SCALE_OPERATIONAL = "operational"

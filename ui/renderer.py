@@ -46,12 +46,8 @@ UNIT_LABEL = {
 }
 
 # When the strategic hex reaches this pixel radius, switch to drawing
-# its 37-hex low-altitude sub-grid inline (seamless zoom).
-SUBHEX_ZOOM_THRESHOLD  = 65
-
-# When the strategic hex reaches this, recurse one more level and draw
-# the 19 mapsheet tiles inside each low-altitude sub-hex.
-TACTICAL_ZOOM_THRESHOLD = 200
+# its 37-hex operational sub-grid inline (seamless zoom).
+SUBHEX_ZOOM_THRESHOLD = 65
 
 # Sub-hex radius as a fraction of parent hex radius. Tuned so the full
 # radius-3 cluster fits CLEANLY inside the parent hex (geometry: furthest
@@ -59,11 +55,6 @@ TACTICAL_ZOOM_THRESHOLD = 200
 # parent_edge_distance = R*sqrt(3)/2 ≈ 0.866R).
 #   0.866 / 6.083 ≈ 0.1424  →  R/7.02.  Use 1/7.1 for a small margin.
 SUBHEX_RATIO = 1.0 / 7.1
-
-# Mapsheet radius as fraction of low-altitude sub-hex radius. Similar
-# geometry for radius-2 cluster: outer corner at 4.359*r, must be ≤
-# 0.866*R_sub.  0.866/4.359 ≈ 0.1988  →  R_sub/5.03.  Use 1/5.1 margin.
-TACTICAL_RATIO = 1.0 / 5.1
 
 # Faint outlines at each level
 STRAT_GUIDE  = (200, 200, 120)   # strategic hex boundary (yellow)
@@ -75,12 +66,13 @@ SUBHEX_GUIDE = (120, 200, 220)   # low-altitude hex boundary (cyan)
 def pixel_to_hierarchical(px: float, py: float, hex_size: float,
                           ox: float, oy: float):
     """
-    Convert a pixel to (strategic_hex, sub_hex_or_None, tac_hex_or_None).
-    Returns sub/tac only at the zoom levels where they're relevant.
-    Returns None for levels the click isn't precise enough for.
+    Convert a pixel to (strategic_hex, sub_hex_or_None, None).
+    sub_hex is the operational-scale hex inside the strategic hex, only
+    returned at zoom levels where the sub-grid is visible.
+    Third element is always None (tactical tier removed).
     """
     from game.hex_grid import pixel_to_hex, hex_to_pixel, Hex, hex_distance
-    from game.constants import OPERATIONAL_RADIUS, TACTICAL_RADIUS
+    from game.constants import OPERATIONAL_RADIUS
 
     strat = pixel_to_hex(px, py, hex_size, ox, oy)
     if hex_size < SUBHEX_ZOOM_THRESHOLD:
@@ -93,34 +85,18 @@ def pixel_to_hierarchical(px: float, py: float, hex_size: float,
     if hex_distance(Hex(0, 0), sub) > OPERATIONAL_RADIUS:
         return strat, None, None
 
-    if hex_size < TACTICAL_ZOOM_THRESHOLD:
-        return strat, sub.to_tuple(), None
-
-    tac_size  = sub_size * TACTICAL_RATIO
-    sub_cx, sub_cy = hex_to_pixel(sub, sub_size, 0, 0)
-    ddx, ddy  = dx - sub_cx, dy - sub_cy
-    tac = pixel_to_hex(ddx, ddy, tac_size, 0, 0)
-    if hex_distance(Hex(0, 0), tac) > TACTICAL_RADIUS:
-        return strat, sub.to_tuple(), None
-
-    return strat, sub.to_tuple(), tac.to_tuple()
+    return strat, sub.to_tuple(), None
 
 
 def hierarchical_offset(sub_pos, tac_pos, hex_size: float):
-    """
-    Return (dx, dy) offset from a strategic hex's center to the given
-    sub/tac position, honoring the current zoom level.
-    """
+    """Return (dx, dy) pixel offset from strategic hex center to sub_pos.
+    tac_pos accepted for signature compat but ignored (tactical tier removed)."""
     from game.hex_grid import hex_to_pixel, Hex
     if sub_pos is None or hex_size < SUBHEX_ZOOM_THRESHOLD:
         return 0.0, 0.0
     sub_size = hex_size * SUBHEX_RATIO
     sx, sy   = hex_to_pixel(Hex.from_tuple(sub_pos), sub_size, 0, 0)
-    if tac_pos is None or hex_size < TACTICAL_ZOOM_THRESHOLD:
-        return sx, sy
-    tac_size = sub_size * TACTICAL_RATIO
-    tx, ty   = hex_to_pixel(Hex.from_tuple(tac_pos), tac_size, 0, 0)
-    return sx + tx, sy + ty
+    return sx, sy
 
 # Status border colors
 STATUS_COLORS = {
@@ -348,9 +324,7 @@ class MapRenderer:
     # ── per-hex drawing ───────────────────────────────────────────────────────
 
     def _draw_subhexes(self, parent: Hex, parent_terrain: str) -> None:
-        """Render the 37 low-altitude sub-hexes that make up a strategic hex.
-        If zoomed in even further, each sub-hex recursively shows its 19
-        mapsheet-level tiles."""
+        """Render the 37 operational sub-hexes (500 m each) inside a strategic hex."""
         from game.campaign import get_operational_map
         sub_tmap = get_operational_map(self.campaign, parent.to_tuple())
 
@@ -363,69 +337,26 @@ class MapRenderer:
         is_fog      = (self.fog_set is not None and key_parent not in self.fog_set)
         is_explored = (is_fog and self.explored_set is not None
                        and key_parent in self.explored_set)
-
-        show_tactical = self.hex_size >= TACTICAL_ZOOM_THRESHOLD
         border_col = (45, 45, 55)
 
         for (sq, sr), terrain in sub_tmap.items():
-            # Local axial → pixel offset (flat-top)
             dx = sub_r * 1.5 * sq
             dy = sub_r * (sqrt3_2 * sq + sqrt3 * sr)
             cx = pcx + dx
             cy = pcy + dy
-
-            if show_tactical and not is_fog:
-                # Recurse: draw the 19 mapsheet tiles inside this sub-hex
-                self._draw_mapsheets(parent.to_tuple(), (sq, sr),
-                                     cx, cy, sub_r, terrain)
-                # Cyan guide line around the low-alt sub-hex
-                corners = [
-                    (cx + sub_r * math.cos(math.pi / 3 * i),
-                     cy + sub_r * math.sin(math.pi / 3 * i))
-                    for i in range(6)
-                ]
-                pygame.draw.polygon(self.surface, SUBHEX_GUIDE, corners, 2)
-            else:
-                corners = [
-                    (cx + sub_r * math.cos(math.pi / 3 * i),
-                     cy + sub_r * math.sin(math.pi / 3 * i))
-                    for i in range(6)
-                ]
-                if not is_fog:
-                    color = terrain_color(terrain)
-                elif is_explored:
-                    color = _dim_color(terrain_color(terrain))
-                else:
-                    color = FOG
-                pygame.draw.polygon(self.surface, color, corners)
-                if sub_r >= 4:
-                    pygame.draw.polygon(self.surface, border_col, corners, 1)
-
-    def _draw_mapsheets(self, strategic_hex: Tuple[int, int],
-                        sub_hex:       Tuple[int, int],
-                        scx: float, scy: float,
-                        sub_r: float, parent_terrain: str) -> None:
-        """Render the 19 mapsheet-level tiles inside one low-altitude sub-hex."""
-        from game.campaign import get_tactical_map
-        tac_tmap = get_tactical_map(self.campaign, strategic_hex, sub_hex)
-
-        tac_r  = max(1.5, sub_r * TACTICAL_RATIO)
-        sqrt3   = math.sqrt(3)
-        sqrt3_2 = sqrt3 * 0.5
-        border_col = (30, 30, 35)
-
-        for (tq, tr), terrain in tac_tmap.items():
-            dx = tac_r * 1.5 * tq
-            dy = tac_r * (sqrt3_2 * tq + sqrt3 * tr)
-            cx = scx + dx
-            cy = scy + dy
             corners = [
-                (cx + tac_r * math.cos(math.pi / 3 * i),
-                 cy + tac_r * math.sin(math.pi / 3 * i))
+                (cx + sub_r * math.cos(math.pi / 3 * i),
+                 cy + sub_r * math.sin(math.pi / 3 * i))
                 for i in range(6)
             ]
-            pygame.draw.polygon(self.surface, terrain_color(terrain), corners)
-            if tac_r >= 3:
+            if not is_fog:
+                color = terrain_color(terrain)
+            elif is_explored:
+                color = _dim_color(terrain_color(terrain))
+            else:
+                color = FOG
+            pygame.draw.polygon(self.surface, color, corners)
+            if sub_r >= 4:
                 pygame.draw.polygon(self.surface, border_col, corners, 1)
 
     def _draw_hex_fill(self, h: Hex, terrain: str) -> None:
@@ -600,9 +531,7 @@ class MapRenderer:
             groups.setdefault(key_px, []).append(u)
 
         # Smaller unit radius when sub-hexes are showing (to fit inside them)
-        if self.hex_size >= TACTICAL_ZOOM_THRESHOLD:
-            radius = max(4, int(self.hex_size * SUBHEX_RATIO * TACTICAL_RATIO * 0.85))
-        elif self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
+        if self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
             radius = max(4, int(self.hex_size * SUBHEX_RATIO * 0.55))
         else:
             radius = min(max(4, int(self.hex_size * 0.32)), 22)

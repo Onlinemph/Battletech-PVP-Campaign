@@ -14,13 +14,13 @@ from game.constants import *
 # ── Movement helpers (BT 8-hour shift math) ───────────────────────────────────
 
 def walk_mp_to_strategic(walk_mp: int) -> int:
-    """Strategic hexes per 8h phase (1 high-alt hex = 342 km, 1 Walk MP = 86.4 km/phase)."""
-    return max(1, round(walk_mp * 86.4 / 342))
+    """Strategic hexes per 8h phase.  1 Walk MP = 86.4 km; 1 strategic hex = 18 km."""
+    return max(1, round(walk_mp * 86.4 / 18))
 
 
 def walk_mp_to_op_range(walk_mp: int) -> int:
-    """Operational hexes per 1h sub-turn (1 low-alt hex = 9.5 km, 8 sub-turns per phase)."""
-    return max(1, round(walk_mp * 86.4 / 8 / 9.5))
+    """Operational hexes per sub-turn for pre-battle positioning (gameplay-scaled)."""
+    return max(1, walk_mp // 2)
 
 SAVES_DIR = Path(__file__).parent.parent / "saves"
 

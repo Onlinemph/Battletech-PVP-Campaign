@@ -304,7 +304,11 @@ def draw_sidebar(
             terrain_id = tmap.get(selected_hex, "?")
             scale_m = LOW_ALT_HEX_SIZE_M
         surface.blit(font.render(f"Terrain: {terrain_name(terrain_id)}", True, TEXT), (x + 12, cy)); cy += 16
-        surface.blit(font_sm.render(f"({scale_m/1000:.1f} km across)", True, TEXT_DIM), (x + 12, cy)); cy += 16
+        if scale_m >= 1000:
+            scale_str = f"{scale_m // 1000} km across"
+        else:
+            scale_str = f"{scale_m} m across (1 mapsheet)"
+        surface.blit(font_sm.render(f"({scale_str})", True, TEXT_DIM), (x + 12, cy)); cy += 16
 
         # Territory control
         if scale == SCALE_STRATEGIC:
@@ -560,13 +564,11 @@ def draw_statusbar(
     if scale == SCALE_OPERATIONAL and op_hex:
         parts.append(f"Operational view of strat hex ({op_hex[0]},{op_hex[1]})")
     else:
-        from ui.renderer import SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
-        if hex_size >= TACTICAL_ZOOM_THRESHOLD:
-            parts.append("Mapsheet tiles (500 m each)")
-        elif hex_size >= SUBHEX_ZOOM_THRESHOLD:
-            parts.append(f"Low-altitude hexes (each sub = {LOW_ALT_HEX_SIZE_M/1000:.1f} km)")
+        from ui.renderer import SUBHEX_ZOOM_THRESHOLD
+        if hex_size >= SUBHEX_ZOOM_THRESHOLD:
+            parts.append(f"Operational  (each hex = {LOW_ALT_HEX_SIZE_M} m / 1 mapsheet)")
         else:
-            parts.append(f"Strategic  (each hex = {HIGH_ALT_HEX_SIZE_M/1000:.0f} km)")
+            parts.append(f"Strategic  (each hex = {HIGH_ALT_HEX_SIZE_M // 1000} km)")
     parts.append(f"Tool: {tool}")
 
     txt = "  |  ".join(parts)

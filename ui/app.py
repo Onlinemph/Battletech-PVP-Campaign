@@ -31,7 +31,7 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
 from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
-from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD, TACTICAL_ZOOM_THRESHOLD
+from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD
 from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
                         TOOLBAR_H, STATUSBAR_H, SIDEBAR_W)
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
@@ -43,7 +43,7 @@ from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
 from ui.export import export_view
 
 
-ZOOM_LEVELS = [8, 12, 18, 26, 38, 55, 80, 120, 180, 260, 380, 540]
+ZOOM_LEVELS = [8, 12, 18, 26, 38, 55, 80, 120, 180]
 
 
 class App:
