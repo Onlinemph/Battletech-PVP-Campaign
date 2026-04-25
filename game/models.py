@@ -45,6 +45,7 @@ class Unit:
     tac_position: Optional[Tuple[int, int]] = None
     vision_range: int  = 2                      # strategic hexes
     repair_cost:  int  = 0                      # C-Bills to restore to active
+    group_id:     Optional[str] = None          # lance/group membership
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
 
@@ -163,6 +164,57 @@ class Structure:
         return cls(**d)
 
 
+# ── Group ─────────────────────────────────────────────────────────────────────
+
+@dataclass
+class Group:
+    id:         str
+    name:       str
+    faction_id: str
+    notes:      str = ""
+
+    @classmethod
+    def new(cls, name: str, faction_id: str) -> "Group":
+        return cls(id=new_id(), name=name, faction_id=faction_id)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name,
+                "faction_id": self.faction_id, "notes": self.notes}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Group":
+        return cls(id=d["id"], name=d["name"],
+                   faction_id=d["faction_id"], notes=d.get("notes", ""))
+
+
+# ── Objective ─────────────────────────────────────────────────────────────────
+
+@dataclass
+class Objective:
+    id:         str
+    name:       str
+    position:   Tuple[int, int]
+    vp_value:   int           = 1
+    status:     str           = OBJECTIVE_ACTIVE
+    faction_id: Optional[str] = None   # who currently controls it
+    notes:      str           = ""
+
+    @classmethod
+    def new(cls, name: str, position: tuple, vp_value: int = 1) -> "Objective":
+        return cls(id=new_id(), name=name, position=tuple(position), vp_value=vp_value)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "position": list(self.position),
+                "vp_value": self.vp_value, "status": self.status,
+                "faction_id": self.faction_id, "notes": self.notes}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Objective":
+        return cls(id=d["id"], name=d["name"], position=tuple(d["position"]),
+                   vp_value=d.get("vp_value", 1), status=d.get("status", OBJECTIVE_ACTIVE),
+                   faction_id=d.get("faction_id"), notes=d.get("notes", ""))
+
+
 # ── Campaign ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -188,6 +240,14 @@ class Campaign:
     event_log:      List[Dict]                           = field(default_factory=list)
     # Per-faction set of hexes ever seen: faction_id → set of (q,r) tuples
     explored_hexes: Dict[str, Set[Tuple[int, int]]]      = field(default_factory=dict)
+    # Territory control: "q,r" → faction_id
+    hex_control:    Dict[str, str]                       = field(default_factory=dict)
+    # Lance/unit groups
+    groups:         Dict[str, "Group"]                   = field(default_factory=dict)
+    # Campaign objectives with VP values
+    objectives:     Dict[str, "Objective"]               = field(default_factory=dict)
+    # Engagement records: list of combat dicts (capped at 200)
+    combat_log:     List[Dict]                           = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -216,6 +276,10 @@ class Campaign:
                 fid: [list(h) for h in hexes]
                 for fid, hexes in self.explored_hexes.items()
             },
+            "hex_control":  dict(self.hex_control),
+            "groups":       {k: v.to_dict() for k, v in self.groups.items()},
+            "objectives":   {k: v.to_dict() for k, v in self.objectives.items()},
+            "combat_log":   list(self.combat_log),
         }
         return d
 
@@ -251,4 +315,8 @@ class Campaign:
                 fid: {tuple(h) for h in hexes}
                 for fid, hexes in d.get("explored_hexes", {}).items()
             },
+            hex_control  = d.get("hex_control", {}),
+            groups       = {k: Group.from_dict(v) for k, v in d.get("groups", {}).items()},
+            objectives   = {k: Objective.from_dict(v) for k, v in d.get("objectives", {}).items()},
+            combat_log   = d.get("combat_log", []),
         )

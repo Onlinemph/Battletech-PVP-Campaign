@@ -277,6 +277,16 @@ class MapRenderer:
                 if h.to_tuple() in self.highlight_hexes:
                     self._draw_hex_highlight(h)
 
+        # Territory control tint (semi-transparent faction color)
+        if self.scale == SCALE_STRATEGIC:
+            for h, _ in hexes:
+                key = f"{h.q},{h.r}"
+                fid = self.campaign.hex_control.get(key)
+                if fid:
+                    f = self.campaign.factions.get(fid)
+                    if f:
+                        self._draw_hex_territory(h, tuple(f.color))
+
         # Draw structures (below missions and units)
         for h, _ in hexes:
             key = h.to_tuple()
@@ -288,6 +298,15 @@ class MapRenderer:
             key = h.to_tuple()
             if key in missions_by_hex:
                 self._draw_mission_icon(h, missions_by_hex[key])
+
+        # Draw objectives (diamond markers)
+        if self.scale == SCALE_STRATEGIC:
+            objectives_by_hex: Dict[Tuple[int, int], list] = {}
+            for o in self.campaign.objectives.values():
+                objectives_by_hex.setdefault(o.position, []).append(o)
+            for h, _ in hexes:
+                if h.to_tuple() in objectives_by_hex:
+                    self._draw_objective_icons(h, objectives_by_hex[h.to_tuple()])
 
         # Draw units
         for h, terrain in hexes:
@@ -410,6 +429,44 @@ class MapRenderer:
         pygame.draw.polygon(surf, (80, 160, 255, 55), pts)
         self.surface.blit(surf, (0, 0))
         pygame.draw.polygon(self.surface, (80, 160, 255), pts, 1)
+
+    def _draw_hex_territory(self, h: Hex, color: tuple) -> None:
+        key = h.to_tuple()
+        if self.fog_set is not None and key not in self.fog_set:
+            if not (self.explored_set and key in self.explored_set):
+                return
+        pts = hex_corners(h, self.hex_size, self.ox, self.oy)
+        surf = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
+        r, g, b = color[0], color[1], color[2]
+        pygame.draw.polygon(surf, (r, g, b, 45), pts)
+        self.surface.blit(surf, (0, 0))
+
+    def _draw_objective_icons(self, h: Hex, objectives: list) -> None:
+        from game.constants import OBJECTIVE_ACTIVE, OBJECTIVE_CAPTURED, OBJECTIVE_DENIED
+        key = h.to_tuple()
+        is_fog = (self.fog_set is not None and key not in self.fog_set)
+        if is_fog:
+            return
+        cx, cy = self.hex_center(h)
+        sz = max(5, int(self.hex_size * 0.25))
+        n = len(objectives)
+        for i, o in enumerate(objectives[:3]):
+            ox = cx + (i - (n - 1) / 2) * (sz * 2 + 2)
+            oy = cy - int(self.hex_size * 0.15)
+            color = {OBJECTIVE_ACTIVE:   (255, 215,   0),
+                     OBJECTIVE_CAPTURED: ( 60, 200,  80),
+                     OBJECTIVE_DENIED:   (210,  50,  50)}.get(o.status, (180, 180, 180))
+            pts = [(ox, oy - sz), (ox + sz, oy), (ox, oy + sz), (ox - sz, oy)]
+            pygame.draw.polygon(self.surface, color, pts)
+            pygame.draw.polygon(self.surface, (0, 0, 0), pts, 1)
+            if o.faction_id:
+                f = self.campaign.factions.get(o.faction_id)
+                if f:
+                    pygame.draw.polygon(self.surface, tuple(f.color), pts, 2)
+            if self.hex_size >= 20 and o.vp_value:
+                font = pygame.font.SysFont("monospace", max(7, sz - 1), bold=True)
+                lbl = font.render(str(o.vp_value), True, (0, 0, 0))
+                self.surface.blit(lbl, lbl.get_rect(center=(int(ox), int(oy))))
 
     def _draw_hex_border(self, h: Hex) -> None:
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)

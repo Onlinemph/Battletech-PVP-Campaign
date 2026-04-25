@@ -7,7 +7,7 @@ from typing import Optional
 
 from game.constants import DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT
 from game.map_gen import generate_map, generate_operational_map, generate_tactical_map
-from game.models import Campaign, Faction, Unit, Mission, Structure, new_id
+from game.models import Campaign, Faction, Unit, Mission, Structure, Group, Objective, new_id
 from game.constants import *
 
 SAVES_DIR = Path(__file__).parent.parent / "saves"
@@ -137,9 +137,48 @@ def add_mission(
     return m
 
 
+def add_group(campaign: Campaign, name: str, faction_id: str) -> Group:
+    g = Group.new(name, faction_id)
+    campaign.groups[g.id] = g
+    log_event(campaign, "group_added", f"Group added: {g.name}")
+    return g
+
+
+def add_objective(campaign: Campaign, name: str, position: tuple,
+                  vp_value: int = 1) -> Objective:
+    o = Objective.new(name, position, vp_value)
+    campaign.objectives[o.id] = o
+    log_event(campaign, "objective_placed", f"Objective '{o.name}' ({o.vp_value} VP)")
+    return o
+
+
+def log_combat(campaign: Campaign, position: tuple, attacker_fid: str,
+               defender_fid: str, outcome: str,
+               casualties: str = "", notes: str = "") -> dict:
+    entry = {
+        "id":           new_id(),
+        "turn":         campaign.current_turn,
+        "position":     list(position),
+        "attacker_fid": attacker_fid,
+        "defender_fid": defender_fid,
+        "outcome":      outcome,
+        "casualties":   casualties,
+        "notes":        notes,
+    }
+    campaign.combat_log.append(entry)
+    if len(campaign.combat_log) > 200:
+        campaign.combat_log = campaign.combat_log[-200:]
+    atk = campaign.factions.get(attacker_fid)
+    dfn = campaign.factions.get(defender_fid)
+    log_event(campaign, "combat_resolved",
+              f"{atk.name if atk else '?'} vs {dfn.name if dfn else '?'} -> {outcome}")
+    return entry
+
+
 def next_turn(campaign: Campaign) -> int:
     update_explored(campaign)
     _log_supply_warnings(campaign)
+    _update_territory(campaign)
     campaign.current_turn += 1
     log_event(campaign, "turn_advanced", f"Turn advanced to {campaign.current_turn}")
     return campaign.current_turn
@@ -166,6 +205,24 @@ def update_explored(campaign: Campaign) -> None:
         if faction_id not in campaign.explored_hexes:
             campaign.explored_hexes[faction_id] = set()
         campaign.explored_hexes[faction_id].update(vis)
+
+
+def _update_territory(campaign: Campaign) -> None:
+    """Auto-capture hexes occupied exclusively by one faction's active units."""
+    from typing import Set as _Set
+    occupied: dict = {}
+    for u in campaign.units.values():
+        if u.position and u.status not in (STATUS_DESTROYED, STATUS_RETREATED):
+            occupied.setdefault(u.position, set()).add(u.faction_id)
+    for pos, fids in occupied.items():
+        key = f"{pos[0]},{pos[1]}"
+        if len(fids) == 1:
+            fid = next(iter(fids))
+            if campaign.hex_control.get(key) != fid:
+                campaign.hex_control[key] = fid
+                f = campaign.factions.get(fid)
+                log_event(campaign, "territory_captured",
+                          f"{f.name if f else fid} captured ({pos[0]},{pos[1]})")
 
 
 def log_event(campaign: Campaign, event: str, detail: str) -> None:

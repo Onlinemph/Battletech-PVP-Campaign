@@ -109,6 +109,19 @@ STRUCTURE_SUPPLY_RANGES = {
 }
 DROPSHIP_SUPPLY_RANGE = 3
 
+# ── Combat outcomes ──────────────────────────────────────────────────────────
+OUTCOME_ATTACKER_WIN = "attacker_victory"
+OUTCOME_DEFENDER_WIN = "defender_victory"
+OUTCOME_DRAW         = "draw"
+OUTCOME_WITHDRAWAL   = "mutual_withdrawal"
+COMBAT_OUTCOMES = [OUTCOME_ATTACKER_WIN, OUTCOME_DEFENDER_WIN, OUTCOME_DRAW, OUTCOME_WITHDRAWAL]
+
+# ── Objectives ────────────────────────────────────────────────────────────────
+OBJECTIVE_ACTIVE   = "active"
+OBJECTIVE_CAPTURED = "captured"
+OBJECTIVE_DENIED   = "denied"
+OBJECTIVE_STATUSES = [OBJECTIVE_ACTIVE, OBJECTIVE_CAPTURED, OBJECTIVE_DENIED]
+
 # Default movement range (strategic hexes/turn)
 DEFAULT_MOVE_RANGE = {
     UNIT_MECH:      3,

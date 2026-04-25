@@ -18,7 +18,8 @@ from game.models import Campaign
 from game.terrain import terrain_name
 from game.campaign import (new_campaign, save_campaign, load_campaign, list_saves,
                             add_faction, add_unit, add_mission, next_turn,
-                            get_operational_map, log_event, add_structure)
+                            get_operational_map, log_event, add_structure,
+                            add_group, add_objective, log_combat)
 from game.vision import visible_hexes, supplied_units, has_supply_sources
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
@@ -28,7 +29,9 @@ from ui.chrome import (draw_toolbar, draw_sidebar, draw_statusbar,
 from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          AddMissionDialog, EditUnitDialog, LoadDialog,
                          ExportDialog, ConfirmDialog, ResolveMissionDialog,
-                         AdjustFundsDialog, AddStructureDialog, HexNoteDialog)
+                         AdjustFundsDialog, AddStructureDialog, HexNoteDialog,
+                         AddGroupDialog, LogEngagementDialog,
+                         AddObjectiveDialog, ResolveObjectiveDialog)
 from ui.export import export_view
 
 
@@ -306,6 +309,11 @@ class App:
             self.dialog = AddStructureDialog(
                 (self.width, self.height), coord, self.campaign.factions)
 
+        elif self.tool == "add_objective":
+            if self.scale != SCALE_STRATEGIC:
+                return
+            self.dialog = AddObjectiveDialog((self.width, self.height), coord)
+
         elif self.tool == "delete":
             if self.scale != SCALE_STRATEGIC:
                 return
@@ -347,6 +355,11 @@ class App:
                 self._toast_msg(f"Advanced to turn {self.campaign.current_turn}")
         elif name == "add_faction":
             self.dialog = AddFactionDialog((self.width, self.height))
+        elif name == "add_group":
+            if not self.campaign.factions:
+                self._toast_msg("Add a faction first.")
+                return
+            self.dialog = AddGroupDialog((self.width, self.height), self.campaign.factions)
         elif name.startswith("tool_"):
             self.tool = name[5:]
             self.move_source_unit = None
@@ -376,7 +389,8 @@ class App:
         elif box.name == "edit_unit":
             u = self.campaign.units.get(box.data)
             if u:
-                self.dialog = EditUnitDialog((self.width, self.height), u)
+                self.dialog = EditUnitDialog((self.width, self.height), u,
+                                             self.campaign.groups)
         elif box.name == "delete_unit":
             self.dialog = ConfirmDialog((self.width, self.height), "Delete this unit?")
             self.dialog._delete_unit_id = box.data  # type: ignore[attr-defined]
@@ -385,6 +399,22 @@ class App:
             if f:
                 self.dialog = AdjustFundsDialog((self.width, self.height), f.name, f.resources)
                 self.dialog._faction_id = box.data  # type: ignore[attr-defined]
+        elif box.name == "group":
+            g = self.campaign.groups.get(box.data)
+            if g:
+                self._toast_msg(f"Group: {g.name}")
+        elif box.name == "objective":
+            o = self.campaign.objectives.get(box.data)
+            if o:
+                self.dialog = ResolveObjectiveDialog(
+                    (self.width, self.height), o, self.campaign.factions)
+        elif box.name == "log_combat":
+            if self.campaign.factions:
+                pos = self.selected_hex or (0, 0)
+                self.dialog = LogEngagementDialog(
+                    (self.width, self.height), pos, self.campaign.factions)
+            else:
+                self._toast_msg("Add factions first.")
         elif box.name == "structure":
             s = self.campaign.structures.get(box.data)
             if s:
@@ -477,6 +507,34 @@ class App:
                 log_event(self.campaign, "funds_adjusted",
                           f"{abs(r['delta']):,} C-Bills {verb} {f.name}{reason}")
                 self._toast_msg(f"{f.name}: {f.resources:,} C-Bills")
+
+        elif isinstance(d, AddGroupDialog):
+            r = d.result
+            g = add_group(self.campaign, r["name"], r["faction_id"])
+            g.notes = r.get("notes", "")
+            self._toast_msg(f"Group added: {g.name}")
+
+        elif isinstance(d, LogEngagementDialog):
+            r = d.result
+            log_combat(self.campaign, r["position"], r["attacker_fid"], r["defender_fid"],
+                       r["outcome"], r["casualties"], r["notes"])
+            self._toast_msg(f"Combat logged: {r['outcome']}")
+
+        elif isinstance(d, AddObjectiveDialog):
+            r = d.result
+            o = add_objective(self.campaign, r["name"], r["position"], r["vp_value"])
+            o.notes = r.get("notes", "")
+            self._toast_msg(f"Objective placed: {o.name} ({o.vp_value} VP)")
+
+        elif isinstance(d, ResolveObjectiveDialog):
+            r = d.result
+            o = d.objective
+            o.status     = r["status"]
+            o.faction_id = r["faction_id"]
+            o.notes      = r["notes"]
+            log_event(self.campaign, "objective_resolved",
+                      f"'{o.name}' -> {o.status}")
+            self._toast_msg(f"Objective '{o.name}' updated")
 
         elif isinstance(d, AddStructureDialog):
             r = d.result

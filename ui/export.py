@@ -91,6 +91,7 @@ def export_view(
         units_save      = None
         missions_save   = None
         structures_save = None
+        objectives_save = None
     else:
         update_explored(campaign)
         fog_set          = visible_hexes(campaign, faction_id)
@@ -98,12 +99,16 @@ def export_view(
         visible          = visible_units(campaign, faction_id, fog_set)
         vis_missions     = {m.id: m for m in visible_missions(campaign, faction_id, fog_set)}
         vis_structures   = visible_structures(campaign, faction_id, fog_set)
+        vis_objectives   = {o.id: o for o in campaign.objectives.values()
+                            if o.position in fog_set}
         units_save       = campaign.units
         missions_save    = campaign.missions
         structures_save  = campaign.structures
+        objectives_save  = campaign.objectives
         campaign.units      = visible
         campaign.missions   = vis_missions
         campaign.structures = vis_structures
+        campaign.objectives = vis_objectives
 
     # Draw into a sub-rect
     map_rect = pygame.Rect(0, header_h, width, height - header_h)
@@ -129,6 +134,8 @@ def export_view(
         campaign.missions   = missions_save
     if structures_save is not None:
         campaign.structures = structures_save
+    if objectives_save is not None:
+        campaign.objectives = objectives_save
 
     # Save
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in (faction_name.split("—")[0].strip()))

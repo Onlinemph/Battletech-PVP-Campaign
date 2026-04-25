@@ -12,8 +12,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pygame
 
-from game.constants import MISSION_STATUSES, STRUCTURE_TYPES, STRUCTURE_SUPPLY_RANGES
-from game.models import Mission, Faction
+from game.constants import (MISSION_STATUSES, STRUCTURE_TYPES, STRUCTURE_SUPPLY_RANGES,
+                             COMBAT_OUTCOMES, OBJECTIVE_STATUSES)
+from game.models import Mission, Faction, Objective
 from ui.colors import (BG, PANEL_BG, PANEL_DARK, BORDER, BORDER_LT,
                         BTN_NORMAL, BTN_HOVER, BTN_ACTIVE, BTN_DANGER,
                         BTN_TEXT, TEXT, TEXT_DIM, TEXT_BRIGHT,
@@ -464,9 +465,9 @@ class AddMissionDialog(Dialog):
 # ── Edit Unit dialog ───────────────────────────────────────────────────────────
 
 class EditUnitDialog(Dialog):
-    W, H = 560, 500
+    W, H = 560, 520
 
-    def __init__(self, screen_size: Tuple[int, int], unit):
+    def __init__(self, screen_size: Tuple[int, int], unit, groups: dict = None):
         super().__init__(f"Edit Unit: {unit.name}", screen_size)
         x, y = self.rect.x + 20, self.rect.y + 50
         self.unit = unit
@@ -480,6 +481,19 @@ class EditUnitDialog(Dialog):
         self.inp_vision      = TextInput(pygame.Rect(x + 140, y + 114,   80, 28), self.font, value=str(unit.vision_range))
         self.inp_notes       = TextInput(pygame.Rect(x + 140, y + 152,  370, 28), self.font, value=unit.notes)
 
+        # Group assignment
+        _groups = groups or {}
+        self._group_ids   = [""] + [g.id for g in _groups.values()
+                                    if g.faction_id == unit.faction_id]
+        group_names       = ["(No Group)"] + [g.name for g in _groups.values()
+                                               if g.faction_id == unit.faction_id]
+        try:
+            grp_idx = self._group_ids.index(unit.group_id or "")
+        except ValueError:
+            grp_idx = 0
+        self.dd_group = DropDown(pygame.Rect(x + 140, y + 190, 220, 28), group_names, self.font,
+                                 selected=grp_idx)
+
         # Roster section
         self.roster_entries: List[Dict] = [
             {"chassis": r.chassis, "pilot": r.pilot, "tonnage": str(r.tonnage),
@@ -487,7 +501,7 @@ class EditUnitDialog(Dialog):
             for r in unit.roster
         ]
         self._roster_scroll = 0
-        self.roster_rect    = pygame.Rect(self.rect.x + 10, y + 200, self.rect.width - 20, 170)
+        self.roster_rect    = pygame.Rect(self.rect.x + 10, y + 238, self.rect.width - 20, 160)
 
         btn_y = self.rect.bottom - 48
         self.btn_ok       = Button(pygame.Rect(self.rect.right - 320, btn_y, 100, 32), "Save",   self.font)
@@ -496,6 +510,7 @@ class EditUnitDialog(Dialog):
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if self.dd_status.handle_event(event): return
+        if self.dd_group.handle_event(event):  return
         self.inp_name.handle_event(event)
         self.inp_repair_cost.handle_event(event)
         self.inp_vision.handle_event(event)
@@ -520,6 +535,7 @@ class EditUnitDialog(Dialog):
                 self.unit.repair_cost  = int(self.inp_repair_cost.value or 0)
                 self.unit.vision_range = int(self.inp_vision.value or 2)
                 self.unit.notes        = self.inp_notes.value.strip()
+                self.unit.group_id     = self._group_ids[self.dd_group.selected] or None
                 self.unit.roster = [
                     RosterEntry(
                         chassis=e["chassis"], pilot=e["pilot"],
@@ -542,14 +558,16 @@ class EditUnitDialog(Dialog):
         self.label(surface, "Repair Cost (C-Bills):", x, y + 83)
         self.label(surface, "Vision:",           x, y + 121)
         self.label(surface, "Notes:",            x, y + 159)
+        self.label(surface, "Group:",            x, y + 197)
         self.inp_name.draw(surface)
         self.dd_status.draw(surface)
         self.inp_repair_cost.draw(surface)
         self.inp_vision.draw(surface)
         self.inp_notes.draw(surface)
+        self.dd_group.draw(surface)
 
         # Roster
-        self.label(surface, "Roster:", x, y + 200, bold=True)
+        self.label(surface, "Roster:", x, y + 238, bold=True)
         pygame.draw.rect(surface, PANEL_DARK, self.roster_rect, border_radius=3)
         pygame.draw.rect(surface, BORDER, self.roster_rect, 1, border_radius=3)
 
@@ -565,6 +583,7 @@ class EditUnitDialog(Dialog):
         self.btn_ok.draw(surface)
         self.btn_roster.draw(surface)
         self.btn_cancel.draw(surface)
+        self.dd_group.draw_overlay(surface)
         self.dd_status.draw_overlay(surface)
 
 
@@ -960,3 +979,228 @@ class HexNoteDialog(Dialog):
         self.btn_ok.draw(surface)
         self.btn_clear.draw(surface)
         self.btn_cancel.draw(surface)
+
+
+# ── Add Group dialog ──────────────────────────────────────────────────────────
+
+class AddGroupDialog(Dialog):
+    W, H = 420, 240
+
+    def __init__(self, screen_size: Tuple[int, int], factions: Dict[str, "Faction"]):
+        super().__init__("New Lance / Group", screen_size)
+        self._fac_ids   = list(factions.keys())
+        fac_names       = [f.name for f in factions.values()]
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.inp_name   = TextInput(pygame.Rect(x + 110, y,      250, 28), self.font,
+                                    placeholder="e.g. Assault Lance Alpha")
+        self.dd_faction = DropDown( pygame.Rect(x + 110, y + 38, 220, 28), fac_names, self.font)
+        self.inp_notes  = TextInput(pygame.Rect(x + 110, y + 76, 250, 28), self.font,
+                                    placeholder="optional notes")
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Add",    self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_faction.handle_event(event): return
+        self.inp_name.handle_event(event)
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_ok.clicked:
+            name = self.inp_name.value.strip()
+            if not name or not self._fac_ids:
+                return
+            self.result = dict(name=name,
+                               faction_id=self._fac_ids[self.dd_faction.selected],
+                               notes=self.inp_notes.value.strip())
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Name:",   x, y + 7)
+        self.label(surface, "Faction:", x, y + 45)
+        self.label(surface, "Notes:",  x, y + 83)
+        self.inp_name.draw(surface)
+        self.inp_notes.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+        self.dd_faction.draw(surface)
+        self.dd_faction.draw_overlay(surface)
+
+
+# ── Log Engagement dialog ─────────────────────────────────────────────────────
+
+class LogEngagementDialog(Dialog):
+    W, H = 540, 380
+
+    def __init__(self, screen_size: Tuple[int, int], position: tuple,
+                 factions: Dict[str, "Faction"]):
+        super().__init__(f"Log Engagement at hex {position}", screen_size)
+        self.position   = position
+        self._fac_ids   = list(factions.keys())
+        fac_names       = [f.name for f in factions.values()]
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.dd_attacker  = DropDown(pygame.Rect(x + 130, y,       220, 28), fac_names,      self.font)
+        self.dd_defender  = DropDown(pygame.Rect(x + 130, y + 38,  220, 28), fac_names,      self.font)
+        self.dd_outcome   = DropDown(pygame.Rect(x + 130, y + 76,  260, 28), COMBAT_OUTCOMES, self.font)
+        self.inp_casualties = TextInput(pygame.Rect(x + 130, y + 114, 360, 28), self.font,
+                                        placeholder="e.g. Atlas destroyed, 2 Mechs crippled")
+        self.inp_notes    = TextInput(pygame.Rect(x + 130, y + 152, 360, 28), self.font,
+                                      placeholder="narrative notes")
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Log",    self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_attacker.handle_event(event):  return
+        if self.dd_defender.handle_event(event):  return
+        if self.dd_outcome.handle_event(event):   return
+        self.inp_casualties.handle_event(event)
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_ok.clicked:
+            if not self._fac_ids:
+                return
+            self.result = dict(
+                position     = self.position,
+                attacker_fid = self._fac_ids[self.dd_attacker.selected],
+                defender_fid = self._fac_ids[self.dd_defender.selected],
+                outcome      = self.dd_outcome.value,
+                casualties   = self.inp_casualties.value.strip(),
+                notes        = self.inp_notes.value.strip(),
+            )
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Attacker:",   x, y + 7)
+        self.label(surface, "Defender:",   x, y + 45)
+        self.label(surface, "Outcome:",    x, y + 83)
+        self.label(surface, "Casualties:", x, y + 121)
+        self.label(surface, "Notes:",      x, y + 159)
+        self.inp_casualties.draw(surface)
+        self.inp_notes.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+        self.dd_attacker.draw(surface)
+        self.dd_defender.draw(surface)
+        self.dd_outcome.draw(surface)
+        self.dd_outcome.draw_overlay(surface)
+        self.dd_defender.draw_overlay(surface)
+        self.dd_attacker.draw_overlay(surface)
+
+
+# ── Add Objective dialog ──────────────────────────────────────────────────────
+
+class AddObjectiveDialog(Dialog):
+    W, H = 460, 260
+
+    def __init__(self, screen_size: Tuple[int, int], position: tuple):
+        super().__init__(f"Place Objective at hex {position}", screen_size)
+        self.position  = position
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.inp_name  = TextInput(pygame.Rect(x + 110, y,      300, 28), self.font,
+                                   placeholder="e.g. Hilltop Firebase")
+        self.inp_vp    = TextInput(pygame.Rect(x + 110, y + 38,  80, 28), self.font, value="1")
+        self.inp_notes = TextInput(pygame.Rect(x + 110, y + 76, 300, 28), self.font,
+                                   placeholder="optional notes")
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Place",  self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        self.inp_name.handle_event(event)
+        self.inp_vp.handle_event(event)
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_ok.clicked:
+            name = self.inp_name.value.strip() or "Objective"
+            try:
+                vp = max(0, int(self.inp_vp.value or 1))
+            except ValueError:
+                vp = 1
+            self.result = dict(name=name, position=self.position,
+                               vp_value=vp, notes=self.inp_notes.value.strip())
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Name:",     x, y + 7)
+        self.label(surface, "VP Value:", x, y + 45)
+        self.label(surface, "Notes:",    x, y + 83)
+        self.inp_name.draw(surface)
+        self.inp_vp.draw(surface)
+        self.inp_notes.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+
+
+# ── Resolve Objective dialog ──────────────────────────────────────────────────
+
+class ResolveObjectiveDialog(Dialog):
+    W, H = 480, 300
+
+    def __init__(self, screen_size: Tuple[int, int], objective: Objective,
+                 factions: Dict[str, "Faction"]):
+        super().__init__(f"Objective: {objective.name}", screen_size)
+        self.objective  = objective
+        self._fac_ids   = [""] + list(factions.keys())
+        fac_names       = ["(None)"] + [f.name for f in factions.values()]
+        x, y = self.rect.x + 20, self.rect.y + 50
+        try:
+            status_idx = OBJECTIVE_STATUSES.index(objective.status)
+        except ValueError:
+            status_idx = 0
+        try:
+            fac_idx = self._fac_ids.index(objective.faction_id or "")
+        except ValueError:
+            fac_idx = 0
+        self.dd_status  = DropDown(pygame.Rect(x + 110, y,      200, 28), OBJECTIVE_STATUSES, self.font,
+                                   selected=status_idx)
+        self.dd_faction = DropDown(pygame.Rect(x + 110, y + 38, 220, 28), fac_names, self.font,
+                                   selected=fac_idx)
+        self.inp_notes  = TextInput(pygame.Rect(x + 110, y + 76, 320, 28), self.font,
+                                    value=objective.notes)
+        btn_y = self.rect.bottom - 48
+        self.btn_ok     = Button(pygame.Rect(self.rect.right - 210, btn_y, 90, 32), "Save",   self.font)
+        self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if self.dd_status.handle_event(event):  return
+        if self.dd_faction.handle_event(event): return
+        self.inp_notes.handle_event(event)
+        self.btn_ok.handle_event(event)
+        self.btn_cancel.handle_event(event)
+        if self.btn_cancel.clicked:
+            self.done = True; self.result = None
+        if self.btn_ok.clicked:
+            fid = self._fac_ids[self.dd_faction.selected] or None
+            self.result = dict(status=self.dd_status.value,
+                               faction_id=fid,
+                               notes=self.inp_notes.value.strip())
+            self.done = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        x, y = self.rect.x + 20, self.rect.y + 50
+        self.label(surface, "Status:",      x, y + 7)
+        self.label(surface, "Controlled by:", x, y + 45)
+        self.label(surface, "Notes:",       x, y + 83)
+        self.inp_notes.draw(surface)
+        self.btn_ok.draw(surface)
+        self.btn_cancel.draw(surface)
+        self.dd_status.draw(surface)
+        self.dd_faction.draw(surface)
+        self.dd_faction.draw_overlay(surface)
+        self.dd_status.draw_overlay(surface)

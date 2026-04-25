@@ -30,15 +30,22 @@ def _mission_status_color(status: str) -> tuple:
 
 def _event_icon(event: str) -> str:
     return {
-        "turn_advanced":    ">>",
-        "faction_added":    "[F]",
-        "unit_added":       "[U]",
-        "unit_moved":       "~>",
-        "unit_deleted":     "[X]",
-        "unit_repaired":    "[W]",
-        "mission_created":  "[M]",
-        "mission_resolved": "[R]",
-        "funds_adjusted":   "[$]",
+        "turn_advanced":      ">>",
+        "faction_added":      "[F]",
+        "unit_added":         "[U]",
+        "unit_moved":         "~>",
+        "unit_deleted":       "[X]",
+        "unit_repaired":      "[W]",
+        "mission_created":    "[M]",
+        "mission_resolved":   "[R]",
+        "funds_adjusted":     "[$]",
+        "structure_built":    "[S]",
+        "supply_warning":     "[!]",
+        "territory_captured": "[T]",
+        "group_added":        "[G]",
+        "combat_resolved":    "[!]",
+        "objective_placed":   "[*]",
+        "objective_resolved": "[*]",
     }.get(event, "  ")
 
 
@@ -106,8 +113,10 @@ def draw_toolbar(
     btn("tool_move",          "Move",         62, active=(active_tool == "move"))
     btn("tool_add_unit",      "+Unit",        62, active=(active_tool == "add_unit"))
     btn("tool_add_mission",   "+Mission",     82, active=(active_tool == "add_mission"))
-    btn("tool_add_structure", "+Struct",      72, active=(active_tool == "add_structure"))
-    btn("tool_delete",        "Delete",       66, active=(active_tool == "delete"))
+    btn("tool_add_structure",  "+Struct",      72, active=(active_tool == "add_structure"))
+    btn("tool_add_objective",  "+Obj",        60, active=(active_tool == "add_objective"))
+    btn("add_group",           "+Group",      70)
+    btn("tool_delete",         "Delete",      66, active=(active_tool == "delete"))
     sep()
 
     btn("view_strategic",   "Strategic",   86, active=(scale == SCALE_STRATEGIC))
@@ -191,7 +200,28 @@ def draw_sidebar(
     if not campaign.factions:
         surface.blit(font_sm.render("(none yet — click +Faction)", True, TEXT_DIM), (x + 12, cy))
         cy += 18
-    cy += 6
+    cy += 4
+
+    # ── Groups ───────────────────────────────────────────────────────────────
+    pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+    surface.blit(font_h.render("GROUPS", True, TEXT_BRIGHT), (x + 12, cy)); cy += 20
+    if not campaign.groups:
+        surface.blit(font_sm.render("(no groups — use +Group)", True, TEXT_DIM), (x + 12, cy))
+        cy += 16
+    else:
+        for g in campaign.groups.values():
+            n_members = sum(1 for u in campaign.units.values() if u.group_id == g.id)
+            row = pygame.Rect(x + 8, cy, width - 16, 20)
+            bg = BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK
+            pygame.draw.rect(surface, bg, row, border_radius=2)
+            gf = campaign.factions.get(g.faction_id)
+            fc = gf.color if gf else (90, 90, 90)
+            pygame.draw.circle(surface, fc, (row.x + 10, row.y + 10), 4)
+            lbl = font_sm.render(f"{g.name[:20]} ({n_members}u)", True, TEXT)
+            surface.blit(lbl, (row.x + 20, row.y + 4))
+            boxes.append(Hitbox("group", row, g.id))
+            cy += 22
+    cy += 4
 
     # ── Selected hex ─────────────────────────────────────────────────────────
     pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
@@ -214,7 +244,19 @@ def draw_sidebar(
             terrain_id = tmap.get(selected_hex, "?")
             scale_m = LOW_ALT_HEX_SIZE_M
         surface.blit(font.render(f"Terrain: {terrain_name(terrain_id)}", True, TEXT), (x + 12, cy)); cy += 16
-        surface.blit(font_sm.render(f"({scale_m/1000:.1f} km across)", True, TEXT_DIM), (x + 12, cy)); cy += 18
+        surface.blit(font_sm.render(f"({scale_m/1000:.1f} km across)", True, TEXT_DIM), (x + 12, cy)); cy += 16
+
+        # Territory control
+        if scale == SCALE_STRATEGIC:
+            ctrl_key = f"{selected_hex[0]},{selected_hex[1]}"
+            ctrl_fid = campaign.hex_control.get(ctrl_key)
+            if ctrl_fid and ctrl_fid in campaign.factions:
+                cf = campaign.factions[ctrl_fid]
+                pygame.draw.rect(surface, cf.color, pygame.Rect(x + 12, cy + 3, 8, 8))
+                surface.blit(font_sm.render(f"Controlled by: {cf.name}", True, TEXT), (x + 26, cy))
+            else:
+                surface.blit(font_sm.render("Control: Uncontrolled", True, TEXT_DIM), (x + 12, cy))
+            cy += 16
 
         # Units in this hex
         hex_units = [u for u in campaign.units.values() if u.position == selected_hex]
@@ -283,7 +325,42 @@ def draw_sidebar(
                     surface.blit(font_sm.render(chunk, True, TEXT_WARN), (x + 14, cy))
                     cy += 13
 
-    cy += 6
+    cy += 4
+
+    # ── Objectives & VP ──────────────────────────────────────────────────────
+    if campaign.objectives or campaign.factions:
+        pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+        surface.blit(font_h.render("OBJECTIVES & VP", True, TEXT_BRIGHT), (x + 12, cy)); cy += 20
+
+        # VP standings, highest first
+        for f in sorted(campaign.factions.values(),
+                        key=lambda f: -sum(o.vp_value for o in campaign.objectives.values()
+                                           if o.faction_id == f.id)):
+            vp = sum(o.vp_value for o in campaign.objectives.values() if o.faction_id == f.id)
+            pygame.draw.rect(surface, f.color, pygame.Rect(x + 12, cy + 3, 8, 8))
+            lbl = font_sm.render(f"{f.name[:14]}  {vp} VP", True, TEXT)
+            surface.blit(lbl, (x + 26, cy))
+            cy += 16
+
+        # Objectives in selected hex
+        if selected_hex and scale == SCALE_STRATEGIC:
+            hex_objs = [o for o in campaign.objectives.values() if o.position == selected_hex]
+            if hex_objs:
+                cy += 2
+                surface.blit(font_sm.render(f"Objectives here ({len(hex_objs)}):", True, TEXT_BRIGHT),
+                             (x + 12, cy)); cy += 15
+                for o in hex_objs:
+                    row = pygame.Rect(x + 14, cy, width - 28, 20)
+                    bg = BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK
+                    pygame.draw.rect(surface, bg, row, border_radius=2)
+                    oc = {"active": (255, 215, 0), "captured": (60, 200, 80),
+                          "denied": (210, 50, 50)}.get(o.status, (150, 150, 150))
+                    pygame.draw.rect(surface, oc, pygame.Rect(row.x + 2, row.y + 2, 4, 16), border_radius=1)
+                    lbl = font_sm.render(f"{o.name[:18]}  {o.vp_value}VP", True, TEXT)
+                    surface.blit(lbl, (row.x + 10, row.y + 4))
+                    boxes.append(Hitbox("objective", row, o.id))
+                    cy += 22
+        cy += 2
 
     # ── Selected unit details ────────────────────────────────────────────────
     if selected_unit_id and selected_unit_id in campaign.units:
@@ -307,6 +384,9 @@ def draw_sidebar(
             surface.blit(font_sm.render(f"Faction has: {faction_res:,} C-Bills", True, TEXT_DIM),
                          (x + 12, cy)); cy += 14
         surface.blit(font_sm.render(f"Vision: {u.vision_range} hex", True, TEXT), (x + 12, cy)); cy += 14
+        if u.group_id and u.group_id in campaign.groups:
+            g = campaign.groups[u.group_id]
+            surface.blit(font_sm.render(f"Group: {g.name}", True, TEXT_WARN), (x + 12, cy)); cy += 14
         surface.blit(font_sm.render(f"Roster: {len(u.roster)} element(s)", True, TEXT), (x + 12, cy)); cy += 16
 
         # Edit / Delete / Pay & Repair buttons
@@ -352,6 +432,35 @@ def draw_sidebar(
             detail = entry["detail"][:32]
             surface.blit(font_sm.render(f"{icon} {detail}", True, TEXT), (x + 36, cy))
             cy += 15
+
+    # ── Combat log ───────────────────────────────────────────────────────────
+    pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+    surface.blit(font_h.render("COMBAT LOG", True, TEXT_BRIGHT), (x + 12, cy)); cy += 20
+
+    if selected_hex and scale == SCALE_STRATEGIC:
+        hex_combats = [e for e in reversed(campaign.combat_log)
+                       if tuple(e["position"]) == selected_hex][:3]
+    else:
+        hex_combats = list(reversed(campaign.combat_log[-3:]))
+
+    if not hex_combats:
+        surface.blit(font_sm.render("(no combats recorded)", True, TEXT_DIM), (x + 12, cy))
+        cy += 16
+    else:
+        for e in hex_combats:
+            atk = campaign.factions.get(e["attacker_fid"])
+            dfn = campaign.factions.get(e["defender_fid"])
+            line1 = f"T{e['turn']} {(atk.name if atk else '?')[:8]} vs {(dfn.name if dfn else '?')[:8]}"
+            line2 = f"  -> {e['outcome'][:22]}"
+            surface.blit(font_sm.render(line1, True, TEXT), (x + 12, cy)); cy += 13
+            surface.blit(font_sm.render(line2, True, TEXT_DIM), (x + 12, cy)); cy += 14
+
+    log_btn = pygame.Rect(x + 14, cy, width - 28, 18)
+    lb_bg = BTN_HOVER if log_btn.collidepoint(hover_pos) else BTN_NORMAL
+    pygame.draw.rect(surface, lb_bg, log_btn, border_radius=2)
+    surface.blit(font_sm.render("+ Log Combat", True, BTN_TEXT), (log_btn.x + 6, log_btn.y + 3))
+    boxes.append(Hitbox("log_combat", log_btn, None))
+    cy += 22
 
     return boxes
 
