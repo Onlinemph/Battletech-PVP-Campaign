@@ -290,6 +290,34 @@ def draw_sidebar(
             cy += 22
     cy += 4
 
+    # ── Reserves (off-map units) ──────────────────────────────────────────────
+    _TYPE_ABBR = {"BattleMech": "M", "Vehicle": "V", "Aerospace": "A",
+                  "Infantry": "I", "DropShip": "D"}
+    reserve_units = [u for u in campaign.units.values()
+                     if u.position is None and u.status != STATUS_DESTROYED]
+    if reserve_units:
+        pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+        surface.blit(font_h.render("RESERVES", True, TEXT_BRIGHT), (x + 12, cy)); cy += 20
+        for u in reserve_units:
+            row = pygame.Rect(x + 8, cy, width - 16, 20)
+            bg  = BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK
+            pygame.draw.rect(surface, bg, row, border_radius=2)
+            fac = campaign.factions.get(u.faction_id)
+            fc  = fac.color if fac else (90, 90, 90)
+            pygame.draw.circle(surface, fc, (row.x + 10, row.y + 10), 4)
+            abbr = _TYPE_ABBR.get(u.unit_type, "?")
+            lbl  = font_sm.render(f"{u.name[:16]} [{abbr}]", True, TEXT)
+            surface.blit(lbl, (row.x + 20, row.y + 4))
+            # Deploy button — registered BEFORE row hitbox so it wins collision check
+            dep_r  = pygame.Rect(row.right - 52, row.y + 2, 48, 16)
+            dep_bg = (30, 100, 30) if dep_r.collidepoint(hover_pos) else BTN_NORMAL
+            pygame.draw.rect(surface, dep_bg, dep_r, border_radius=2)
+            surface.blit(font_sm.render("Deploy", True, BTN_TEXT), (dep_r.x + 4, dep_r.y + 2))
+            boxes.append(Hitbox("deploy_unit", dep_r, u.id))
+            boxes.append(Hitbox("reserve_unit", row,   u.id))
+            cy += 22
+        cy += 4
+
     # ── Selected hex ─────────────────────────────────────────────────────────
     pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
     surface.blit(font_h.render("HEX INFO", True, TEXT_BRIGHT), (x + 12, cy)); cy += 22

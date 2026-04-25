@@ -70,6 +70,7 @@ class App:
         self.selected_unit_id: Optional[str] = None
         self.faction_filter: Optional[str]   = None
         self.move_source_unit: Optional[str] = None  # when using move tool
+        self.deploy_unit_id:  Optional[str] = None  # reserve unit being deployed
 
         # Mouse pan
         self._drag_active        = False
@@ -291,7 +292,10 @@ class App:
         if k == pygame.K_ESCAPE:
             self._show_help = False
             self._ctx_menu  = None
-            if self.scale == SCALE_OPERATIONAL:
+            if self.deploy_unit_id:
+                self.deploy_unit_id = None
+                self._toast_msg("Deploy cancelled")
+            elif self.scale == SCALE_OPERATIONAL:
                 self.scale = SCALE_STRATEGIC
                 self.op_hex = None
             else:
@@ -344,6 +348,22 @@ class App:
 
         tmap = self._current_terrain_map()
         if coord not in tmap:
+            return
+
+        # Deploy mode: place a reserve unit on the clicked hex
+        if self.deploy_unit_id:
+            u = self.campaign.units.get(self.deploy_unit_id)
+            if u:
+                u.position = coord
+                u.sub_position = sub.to_tuple() if sub else None
+                if u.status == STATUS_RESERVE:
+                    u.status = STATUS_ACTIVE
+                log_event(self.campaign, "unit_deployed",
+                          f"{u.name} deployed to ({coord[0]},{coord[1]})")
+                self.selected_unit_id = u.id
+                self.selected_hex     = coord
+                self._toast_msg(f"Deployed {u.name} to ({coord[0]},{coord[1]})")
+            self.deploy_unit_id = None
             return
 
         if self.tool == "select":
@@ -572,6 +592,13 @@ class App:
                 self.pan_x  = (self.width - SIDEBAR_W) / 2
                 self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
                 self._toast_msg(f"Contact! Drilling into hex ({pos[0]},{pos[1]})")
+        elif box.name == "reserve_unit":
+            self.selected_unit_id = box.data
+        elif box.name == "deploy_unit":
+            u = self.campaign.units.get(box.data)
+            if u:
+                self.deploy_unit_id = box.data
+                self._toast_msg(f"Deploy {u.name} — click a hex to place")
         elif box.name == "pay_repair":
             u = self.campaign.units.get(box.data)
             if u:
@@ -860,6 +887,26 @@ class App:
             self._draw_context_menu()
         if self._show_help:
             self._draw_help_overlay()
+        if self.deploy_unit_id:
+            self._draw_deploy_banner()
+
+    def _draw_deploy_banner(self) -> None:
+        u = self.campaign.units.get(self.deploy_unit_id) if self.deploy_unit_id else None
+        if not u:
+            return
+        font = pygame.font.SysFont("monospace", 13, bold=True)
+        text = f"DEPLOY  {u.name}  —  click a hex to place   [Esc] to cancel"
+        tw, th = font.size(text)
+        map_r = self._map_rect()
+        bw = tw + 24
+        bx = map_r.x + (map_r.width - bw) // 2
+        by = map_r.y + 10
+        bg = pygame.Surface((bw, th + 10), pygame.SRCALPHA)
+        bg.fill((20, 80, 20, 220))
+        self.screen.blit(bg, (bx, by))
+        pygame.draw.rect(self.screen, (80, 200, 80),
+                         pygame.Rect(bx, by, bw, th + 10), 1, border_radius=4)
+        self.screen.blit(font.render(text, True, (180, 255, 180)), (bx + 12, by + 5))
 
     def _draw_hover_tooltip(self, pos: Tuple[int, int], units: list) -> None:
         font = pygame.font.SysFont("monospace", 11, bold=True)
