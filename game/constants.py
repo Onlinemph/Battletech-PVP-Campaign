@@ -134,7 +134,10 @@ PHASE_COLOR     = {
     PHASE_NIGHT:     ( 80, 100, 190),
 }
 
-# Default movement range (strategic hexes/turn)
+# Operational sub-turns per strategic phase (8h phase ÷ 1h sub-turns)
+OP_TURNS_PER_PHASE = 8
+
+# Default movement range (strategic hexes/turn) — legacy fallback for Aerospace/DropShip
 DEFAULT_MOVE_RANGE = {
     UNIT_MECH:      3,
     UNIT_VEHICLE:   3,

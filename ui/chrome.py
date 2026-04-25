@@ -7,7 +7,8 @@ import pygame
 
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
-                             PHASE_COLOR, PHASE_ABBR, PHASE_MORNING)
+                             PHASE_COLOR, PHASE_ABBR, PHASE_MORNING,
+                             OP_TURNS_PER_PHASE)
 from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
@@ -53,6 +54,8 @@ def _event_icon(event: str) -> str:
         "phase_night":         "[**]",
         "contact_detected":    "[!!]",
         "sensor_contact":      "[~]",
+        "op_turn_advanced":    "[h]",
+        "op_contact":          "[X]",
     }.get(event, "  ")
 
 
@@ -77,6 +80,7 @@ def draw_toolbar(
     hover_pos:    Tuple[int, int],
     phase:        str = PHASE_MORNING,
     has_undo:     bool = False,
+    op_turn:      int  = 0,
 ) -> List[Hitbox]:
     """
     Draw top toolbar. Returns list of clickable Hitboxes:
@@ -136,18 +140,28 @@ def draw_toolbar(
     btn("add_faction", "+Faction", 82)
     sep()
 
-    # Day / Phase counter
+    # Day / Phase / Op-turn counter
     phase_color = PHASE_COLOR.get(phase, (120, 120, 130))
     abbr        = PHASE_ABBR.get(phase, "??")
-    turn_rect   = pygame.Rect(x, y, 160, TOOLBAR_H - 14)
+    if scale == SCALE_OPERATIONAL:
+        turn_label = f"D{turn} {abbr}  H{op_turn+1}/{OP_TURNS_PER_PHASE}"
+        turn_w     = 178
+        next_label = "Next Hour >>"
+        next_w     = 118
+    else:
+        turn_label = f"Day {turn}  ·  {abbr}"
+        turn_w     = 160
+        next_label = "Next Phase >>"
+        next_w     = 118
+    turn_rect = pygame.Rect(x, y, turn_w, TOOLBAR_H - 14)
     pygame.draw.rect(surface, (40, 40, 50), turn_rect, border_radius=3)
     pygame.draw.rect(surface, phase_color, turn_rect, 1, border_radius=3)
-    t_lbl = font.render(f"Day {turn}  ·  {abbr}", True, phase_color)
+    t_lbl = font.render(turn_label, True, phase_color)
     surface.blit(t_lbl, t_lbl.get_rect(center=turn_rect.center))
-    x += 164
+    x += turn_w + 4
 
-    btn("next_turn",    "Next Phase >>", 118)
-    btn("revert_phase", "< Undo",        72, danger=(not has_undo))
+    btn("next_turn",    next_label, next_w)
+    btn("revert_phase", "< Undo",   72, danger=(not has_undo))
 
     # Right-aligned: campaign name
     name_font = pygame.font.SysFont("monospace", 14, bold=True)
@@ -301,8 +315,11 @@ def draw_sidebar(
                 faction = campaign.factions.get(u.faction_id)
                 fc = faction.color if faction else (150, 150, 150)
                 pygame.draw.circle(surface, fc, (row.x + 10, row.y + 10), 5)
-                lbl = font_sm.render(f"{u.name[:22]} [{u.unit_type[:4]}]", True, TEXT)
+                lbl = font_sm.render(f"{u.name[:16]} [{u.unit_type[:4]}]", True, TEXT)
                 surface.blit(lbl, (row.x + 20, row.y + 4))
+                if u.walk_mp:
+                    mp_surf = font_sm.render(f"{u.walk_mp}/{u.run_mp}", True, (140, 200, 140))
+                    surface.blit(mp_surf, (row.right - mp_surf.get_width() - 4, row.y + 4))
                 boxes.append(Hitbox("unit", row, u.id))
                 cy += 22
 

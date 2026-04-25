@@ -13,7 +13,8 @@ import pygame
 from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              DEFAULT_VISION, UNIT_MECH,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
-                             DEFAULT_MOVE_RANGE,
+                             DEFAULT_MOVE_RANGE, OP_TURNS_PER_PHASE,
+                             STATUS_DESTROYED, STATUS_RETREATED,
                              TERRAIN_PLAINS, TERRAIN_FOREST, TERRAIN_HILLS,
                              TERRAIN_MOUNTAINS, TERRAIN_URBAN, TERRAIN_INDUSTRIAL,
                              TERRAIN_DESERT, TERRAIN_ARCTIC, TERRAIN_WATER,
@@ -23,8 +24,9 @@ from game.models import Campaign
 from game.terrain import terrain_name
 from game.campaign import (new_campaign, save_campaign, load_campaign, list_saves,
                             add_faction, add_unit, add_mission, next_turn, next_phase,
-                            get_operational_map, log_event, add_structure,
-                            add_group, add_objective, log_combat)
+                            next_op_turn, get_operational_map, log_event, add_structure,
+                            add_group, add_objective, log_combat,
+                            walk_mp_to_strategic, walk_mp_to_op_range)
 from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
@@ -136,6 +138,15 @@ class App:
         return pygame.Rect(0, TOOLBAR_H,
                            self.width - SIDEBAR_W,
                            self.height - TOOLBAR_H - STATUSBAR_H)
+
+    def _group_walk_mp(self, unit) -> int:
+        """Return effective walk_mp — minimum across all active members of unit's group."""
+        if not unit.group_id:
+            return unit.walk_mp
+        members = [u for u in self.campaign.units.values()
+                   if u.group_id == unit.group_id
+                   and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
+        return min(u.walk_mp for u in members) if members else unit.walk_mp
 
     # ── main menu (blank state) ──────────────────────────────────────────────
 
@@ -333,23 +344,46 @@ class App:
             self.selected_unit_id = hex_units[0].id if hex_units else None
 
         elif self.tool == "move":
-            if self.move_source_unit is None:
-                hex_units = [u for u in self.campaign.units.values() if u.position == coord]
-                if hex_units:
-                    self.move_source_unit  = hex_units[0].id
-                    self.selected_unit_id  = hex_units[0].id
-                    self._toast_msg(f"Move {hex_units[0].name}: click destination")
+            if self.scale == SCALE_OPERATIONAL:
+                # Operational move: pick unit by sub_position, then set destination sub_position
+                if self.move_source_unit is None:
+                    op_units = [u for u in self.campaign.units.values()
+                                if u.position == self.op_hex and u.sub_position == coord]
+                    if not op_units:
+                        # coord here is the sub-hex axial from pixel_to_hierarchical's sub result
+                        op_units = [u for u in self.campaign.units.values()
+                                    if u.position == self.op_hex]
+                    if op_units:
+                        self.move_source_unit = op_units[0].id
+                        self.selected_unit_id = op_units[0].id
+                        self._toast_msg(f"Op-move {op_units[0].name}: click destination")
+                else:
+                    u = self.campaign.units.get(self.move_source_unit)
+                    if u is not None:
+                        dest_sub = sub.to_tuple() if sub is not None else coord
+                        u.sub_position = dest_sub
+                        self._toast_msg(f"Moved {u.name} to sub {dest_sub}")
+                        log_event(self.campaign, "unit_moved",
+                                  f"{u.name} op-move to sub({dest_sub[0]},{dest_sub[1]})")
+                    self.move_source_unit = None
             else:
-                u = self.campaign.units.get(self.move_source_unit)
-                if u is not None:
-                    u.position     = coord
-                    u.sub_position = sub
-                    u.tac_position = tac
-                    detail = _fmt_coord(coord, sub, tac)
-                    self._toast_msg(f"Moved {u.name} to {detail}")
-                    log_event(self.campaign, "unit_moved",
-                              f"{u.name} moved to ({coord[0]},{coord[1]})")
-                self.move_source_unit = None
+                if self.move_source_unit is None:
+                    hex_units = [u for u in self.campaign.units.values() if u.position == coord]
+                    if hex_units:
+                        self.move_source_unit  = hex_units[0].id
+                        self.selected_unit_id  = hex_units[0].id
+                        self._toast_msg(f"Move {hex_units[0].name}: click destination")
+                else:
+                    u = self.campaign.units.get(self.move_source_unit)
+                    if u is not None:
+                        u.position     = coord
+                        u.sub_position = sub
+                        u.tac_position = tac
+                        detail = _fmt_coord(coord, sub, tac)
+                        self._toast_msg(f"Moved {u.name} to {detail}")
+                        log_event(self.campaign, "unit_moved",
+                                  f"{u.name} moved to ({coord[0]},{coord[1]})")
+                    self.move_source_unit = None
 
         elif self.tool == "add_unit":
             if not self.campaign.factions:
@@ -425,9 +459,14 @@ class App:
                 self._phase_undo_stack.append(snap)
                 if len(self._phase_undo_stack) > 10:
                     self._phase_undo_stack.pop(0)
-                day, phase = next_phase(self.campaign)
-                abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
-                self._toast_msg(f"Day {day} · {abbr}")
+                if self.scale == SCALE_OPERATIONAL:
+                    day, phase, op_t = next_op_turn(self.campaign)
+                    abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
+                    self._toast_msg(f"Hour {op_t+1}/{OP_TURNS_PER_PHASE} — Day {day} {abbr}")
+                else:
+                    day, phase = next_phase(self.campaign)
+                    abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
+                    self._toast_msg(f"Day {day} · {abbr}")
                 from game.campaign import SAVES_DIR
                 save_campaign(self.campaign, SAVES_DIR / "autosave.json")
         elif name == "revert_phase":
@@ -570,6 +609,8 @@ class App:
             u = add_unit(self.campaign, r["name"], r["faction_id"], r["unit_type"],
                          position=r["position"], vision_range=r["vision"])
             u.notes        = r.get("notes", "")
+            u.walk_mp      = r.get("walk_mp", 4)
+            u.run_mp       = r.get("run_mp",  6)
             u.sub_position = getattr(d, "_sub_pos", None)
             u.tac_position = getattr(d, "_tac_pos", None)
             self.selected_unit_id = u.id
@@ -712,6 +753,7 @@ class App:
             self.campaign.current_turn, self.campaign.name, mouse_pos,
             phase=self.campaign.current_phase,
             has_undo=bool(self._phase_undo_stack),
+            op_turn=self.campaign.op_turn,
         )
 
         # Map
@@ -731,13 +773,18 @@ class App:
 
         # Movement range highlight when a source unit is selected in move mode
         highlight_hexes = None
-        if (self.tool == "move" and self.move_source_unit
-                and self.scale == SCALE_STRATEGIC):
+        if self.tool == "move" and self.move_source_unit:
             u = self.campaign.units.get(self.move_source_unit)
-            if u and u.position is not None:
-                move_range = DEFAULT_MOVE_RANGE.get(u.unit_type, 3)
-                center = Hex.from_tuple(u.position)
-                highlight_hexes = {h.to_tuple() for h in hex_range(center, move_range)}
+            if u:
+                eff_walk = self._group_walk_mp(u)
+                if self.scale == SCALE_STRATEGIC and u.position is not None:
+                    move_range = walk_mp_to_strategic(eff_walk)
+                    center = Hex.from_tuple(u.position)
+                    highlight_hexes = {h.to_tuple() for h in hex_range(center, move_range)}
+                elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
+                    op_range = walk_mp_to_op_range(eff_walk)
+                    center = Hex.from_tuple(u.sub_position)
+                    highlight_hexes = {h.to_tuple() for h in hex_range(center, op_range)}
 
         # Supply indicators: orange ring on units out of supply range
         supply_set = None

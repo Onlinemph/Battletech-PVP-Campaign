@@ -10,6 +10,18 @@ from game.map_gen import generate_map, generate_operational_map, generate_tactic
 from game.models import Campaign, Faction, Unit, Mission, Structure, Group, Objective, new_id
 from game.constants import *
 
+
+# ── Movement helpers (BT 8-hour shift math) ───────────────────────────────────
+
+def walk_mp_to_strategic(walk_mp: int) -> int:
+    """Strategic hexes per 8h phase (1 high-alt hex = 342 km, 1 Walk MP = 86.4 km/phase)."""
+    return max(1, round(walk_mp * 86.4 / 342))
+
+
+def walk_mp_to_op_range(walk_mp: int) -> int:
+    """Operational hexes per 1h sub-turn (1 low-alt hex = 9.5 km, 8 sub-turns per phase)."""
+    return max(1, round(walk_mp * 86.4 / 8 / 9.5))
+
 SAVES_DIR = Path(__file__).parent.parent / "saves"
 
 
@@ -201,6 +213,41 @@ def next_turn(campaign: Campaign) -> int:
     for _ in range(3):
         next_phase(campaign)
     return campaign.current_turn
+
+
+def next_op_turn(campaign: Campaign) -> tuple:
+    """Advance one 1-hour operational sub-turn.
+    After OP_TURNS_PER_PHASE sub-turns, the strategic phase advances automatically.
+    Returns (day, phase, op_turn_index)."""
+    campaign.op_turn += 1
+    if campaign.op_turn >= OP_TURNS_PER_PHASE:
+        campaign.op_turn = 0
+        next_phase(campaign)
+    else:
+        _detect_op_contacts(campaign)
+        log_event(campaign, "op_turn_advanced",
+                  f"Hour {campaign.op_turn}/{OP_TURNS_PER_PHASE} of "
+                  f"Day {campaign.current_turn} · "
+                  f"{PHASE_ABBR.get(campaign.current_phase, '?')}")
+    return campaign.current_turn, campaign.current_phase, campaign.op_turn
+
+
+def _detect_op_contacts(campaign: Campaign) -> None:
+    """Detect units from opposing factions sharing the same sub_position in a strategic hex."""
+    sub_factions: dict = {}
+    for u in campaign.units.values():
+        if (u.position and u.sub_position
+                and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)):
+            key = (u.position, u.sub_position)
+            sub_factions.setdefault(key, set()).add(u.faction_id)
+    for key, fids in sub_factions.items():
+        if len(fids) >= 2:
+            strat, sub = key
+            names = [campaign.factions[f].name if f in campaign.factions else f
+                     for f in fids]
+            log_event(campaign, "op_contact",
+                      f"Tactical contact at ({strat[0]},{strat[1]}) "
+                      f"sub({sub[0]},{sub[1]}): {' vs '.join(names)}")
 
 
 def _detect_contacts(campaign: Campaign) -> None:

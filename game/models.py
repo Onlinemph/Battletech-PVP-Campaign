@@ -45,6 +45,8 @@ class Unit:
     tac_position: Optional[Tuple[int, int]] = None
     vision_range: int  = 2                      # strategic hexes
     repair_cost:  int  = 0                      # C-Bills to restore to active
+    walk_mp:      int  = 4                      # BattleTech Walk movement points
+    run_mp:       int  = 6                      # BattleTech Run movement points
     group_id:     Optional[str] = None          # lance/group membership
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
@@ -70,6 +72,8 @@ class Unit:
         for f in ("position", "sub_position", "tac_position"):
             if d.get(f) is not None:
                 d[f] = tuple(d[f])
+        d.setdefault("walk_mp", 4)
+        d.setdefault("run_mp",  6)
         return cls(**d)
 
 
@@ -250,6 +254,8 @@ class Campaign:
     combat_log:     List[Dict]                           = field(default_factory=list)
     # Current time of day within the day
     current_phase:   str                                 = PHASE_MORNING
+    # Sub-turn index within the current strategic phase (0 to OP_TURNS_PER_PHASE-1)
+    op_turn:         int                                 = 0
     # Hexes with multi-faction presence: "q,r" → [faction_id, ...]
     active_contacts: Dict[str, List[str]]                = field(default_factory=dict)
 
@@ -285,6 +291,7 @@ class Campaign:
             "objectives":   {k: v.to_dict() for k, v in self.objectives.items()},
             "combat_log":     list(self.combat_log),
             "current_phase":  self.current_phase,
+            "op_turn":         self.op_turn,
             "active_contacts": dict(self.active_contacts),
         }
         return d
@@ -326,5 +333,6 @@ class Campaign:
             objectives      = {k: Objective.from_dict(v) for k, v in d.get("objectives", {}).items()},
             combat_log      = d.get("combat_log", []),
             current_phase   = d.get("current_phase", PHASE_MORNING),
+            op_turn         = d.get("op_turn", 0),
             active_contacts = d.get("active_contacts", {}),
         )

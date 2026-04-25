@@ -350,7 +350,13 @@ class AddFactionDialog(Dialog):
 # ── Add Unit dialog ────────────────────────────────────────────────────────────
 
 class AddUnitDialog(Dialog):
-    W, H = 520, 370
+    W, H = 520, 410
+
+    # Default walk/run MP by unit type
+    _DEFAULT_MP = {
+        "BattleMech": (4, 6), "Vehicle": (4, 6),
+        "Infantry": (1, 2), "Aerospace": (0, 0), "DropShip": (1, 2),
+    }
 
     def __init__(self, screen_size: Tuple[int, int], factions: list, hex_pos: tuple):
         super().__init__(f"Add Unit at hex {hex_pos}", screen_size)
@@ -363,8 +369,10 @@ class AddUnitDialog(Dialog):
         self.inp_name    = TextInput(pygame.Rect(x + 130, y,       330, 28), self.font, "e.g. Alpha Lance")
         self.dd_faction  = DropDown( pygame.Rect(x + 130, y + 38,  240, 28), [f[0] for f in factions], self.font)
         self.dd_type     = DropDown( pygame.Rect(x + 130, y + 76,  200, 28), UNIT_TYPES, self.font)
-        self.inp_vision  = TextInput(pygame.Rect(x + 130, y + 114, 80,  28), self.font, "2", "2")
-        self.inp_notes   = TextInput(pygame.Rect(x + 130, y + 152, 330, 28), self.font, "optional notes")
+        self.inp_walk    = TextInput(pygame.Rect(x + 130, y + 114,  60, 28), self.font, "4", "4")
+        self.inp_run     = TextInput(pygame.Rect(x + 220, y + 114,  60, 28), self.font, "6", "6")
+        self.inp_vision  = TextInput(pygame.Rect(x + 130, y + 152,  80, 28), self.font, "2", "2")
+        self.inp_notes   = TextInput(pygame.Rect(x + 130, y + 190, 330, 28), self.font, "optional notes")
 
         self._faction_ids = [f[1] for f in factions]  # parallel list of IDs
 
@@ -373,10 +381,16 @@ class AddUnitDialog(Dialog):
         self.btn_cancel = Button(pygame.Rect(self.rect.right - 110, btn_y, 90, 32), "Cancel", self.font, danger=True)
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        # Dropdowns first - they consume clicks on their options so hidden widgets don't fire
         if self.dd_faction.handle_event(event): return
-        if self.dd_type.handle_event(event):    return
+        if self.dd_type.handle_event(event):
+            # Auto-fill walk/run MP when type changes
+            w, r = self._DEFAULT_MP.get(self.dd_type.value, (4, 6))
+            self.inp_walk.value = str(w)
+            self.inp_run.value  = str(r)
+            return
         self.inp_name.handle_event(event)
+        self.inp_walk.handle_event(event)
+        self.inp_run.handle_event(event)
         self.inp_vision.handle_event(event)
         self.inp_notes.handle_event(event)
         self.btn_ok.handle_event(event)
@@ -388,9 +402,13 @@ class AddUnitDialog(Dialog):
                 name       = self.inp_name.value.strip() or "New Unit"
                 faction_id = self._faction_ids[self.dd_faction.selected] if self._faction_ids else ""
                 unit_type  = self.dd_type.value
+                w_def, r_def = self._DEFAULT_MP.get(unit_type, (4, 6))
+                walk_mp    = int(self.inp_walk.value or w_def)
+                run_mp     = int(self.inp_run.value  or r_def)
                 vision     = int(self.inp_vision.value or self.DEFAULT_VISION.get(unit_type, 2))
                 notes      = self.inp_notes.value.strip()
                 self.result = dict(name=name, faction_id=faction_id, unit_type=unit_type,
+                                   walk_mp=walk_mp, run_mp=run_mp,
                                    vision=vision, notes=notes, position=self.hex_pos)
                 self.done = True
             except (ValueError, IndexError):
@@ -399,17 +417,19 @@ class AddUnitDialog(Dialog):
     def draw(self, surface: pygame.Surface) -> None:
         self._draw_frame(surface)
         x, y = self.rect.x + 20, self.rect.y + 50
-        labels = ["Unit Name:", "Faction:", "Unit Type:", "Vision Range:", "Notes:"]
+        labels = ["Unit Name:", "Faction:", "Unit Type:", "Walk / Run MP:", "Vision Range:", "Notes:"]
         for i, lbl in enumerate(labels):
             self.label(surface, lbl, x, y + 7 + i * 38)
         self.inp_name.draw(surface)
         self.dd_faction.draw(surface)
         self.dd_type.draw(surface)
+        self.inp_walk.draw(surface)
+        self.label(surface, "/", x + 188, y + 121, color=(180, 180, 180))
+        self.inp_run.draw(surface)
         self.inp_vision.draw(surface)
         self.inp_notes.draw(surface)
         self.btn_ok.draw(surface)
         self.btn_cancel.draw(surface)
-        # Overlays on top
         self.dd_faction.draw_overlay(surface)
         self.dd_type.draw_overlay(surface)
 
