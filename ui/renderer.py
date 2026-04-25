@@ -289,6 +289,10 @@ class MapRenderer:
                     if f:
                         self._draw_hex_territory(h, tuple(f.color))
 
+        # Coastal transition shading
+        if self.scale == SCALE_STRATEGIC:
+            self._draw_coastal_edges(hexes, tmap)
+
         # Draw structures (below missions and units)
         for h, _ in hexes:
             key = h.to_tuple()
@@ -462,7 +466,7 @@ class MapRenderer:
         if is_fog:
             return
         cx, cy = self.hex_center(h)
-        sz = max(5, int(self.hex_size * 0.25))
+        sz = min(max(5, int(self.hex_size * 0.25)), 16)
         n = len(objectives)
         for i, o in enumerate(objectives[:3]):
             ox = cx + (i - (n - 1) / 2) * (sz * 2 + 2)
@@ -481,6 +485,41 @@ class MapRenderer:
                 font = pygame.font.SysFont("monospace", max(7, sz - 1), bold=True)
                 lbl = font.render(str(o.vp_value), True, (0, 0, 0))
                 self.surface.blit(lbl, lbl.get_rect(center=(int(ox), int(oy))))
+
+    def _draw_coastal_edges(self, hexes: list, tmap: dict) -> None:
+        """Overlay water-wash triangles on coast/water hex edges that border a
+        different moisture level, creating a visual shoreline gradient."""
+        from game.hex_grid import HEX_DIRECTIONS
+        WATER_SET = {TERRAIN_DEEP_WATER, TERRAIN_WATER}
+        LAND_SET  = {TERRAIN_COAST, TERRAIN_PLAINS, TERRAIN_FOREST, TERRAIN_HILLS,
+                     TERRAIN_MOUNTAINS, TERRAIN_URBAN, TERRAIN_INDUSTRIAL,
+                     TERRAIN_DESERT, TERRAIN_ARCTIC, TERRAIN_VOLCANIC}
+        overlay = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
+        for h, terrain in hexes:
+            key = h.to_tuple()
+            if self.fog_set is not None and key not in self.fog_set:
+                if not (self.explored_set and key in self.explored_set):
+                    continue
+            cx, cy  = self.hex_center(h)
+            corners = hex_corners(h, self.hex_size, self.ox, self.oy)
+            # hex_corners uses angle=π/3*i → corner order (pygame y-down):
+            # 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
+            # HEX_DIRECTIONS[di]: edge between corners[di] and corners[(di+1)%6]
+            # faces direction (6-di)%6  →  edge_i for direction di = (6-di)%6
+            # wait: verified mapping: edge_i = di (corners[di]→corners[(di+1)%6])
+            # faces direction (6-di)%6.  So for direction di → edge_i = (6-di)%6
+            for di, d in enumerate(HEX_DIRECTIONS):
+                nb = tmap.get((h.q + d.q, h.r + d.r))
+                edge_i = (6 - di) % 6
+                p1 = corners[edge_i]
+                p2 = corners[(edge_i + 1) % 6]
+                if terrain == TERRAIN_COAST and nb in WATER_SET:
+                    pygame.draw.polygon(overlay, (50, 110, 190, 85),
+                                        [(cx, cy), p1, p2])
+                elif terrain in WATER_SET and nb in LAND_SET:
+                    pygame.draw.polygon(overlay, (90, 155, 220, 65),
+                                        [(cx, cy), p1, p2])
+        self.surface.blit(overlay, (0, 0))
 
     def _draw_hex_border(self, h: Hex) -> None:
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
@@ -508,7 +547,7 @@ class MapRenderer:
         if is_fog:
             return
         cx, cy = self.hex_center(h)
-        sz     = max(5, int(self.hex_size * 0.22))
+        sz     = min(max(8, int(self.hex_size * 0.30)), 22)
         for i, s in enumerate(structures[:3]):
             glyph, bg = STRUCTURE_GLYPH.get(s.structure_type, ("?", (120, 100, 80)))
             # Stack multiple structures horizontally
@@ -521,7 +560,7 @@ class MapRenderer:
                 f = self.campaign.factions.get(s.faction_id)
                 if f:
                     pygame.draw.rect(self.surface, f.color, r, 1, border_radius=2)
-            if sz >= 8:
+            if sz >= 7:
                 font = pygame.font.SysFont("monospace", max(7, sz - 2), bold=True)
                 lbl  = font.render(glyph, True, (240, 240, 240))
                 self.surface.blit(lbl, lbl.get_rect(center=(int(sx), int(sy))))
@@ -532,7 +571,7 @@ class MapRenderer:
         if is_fog:
             return
         cx, cy = self.hex_center(h)
-        r = max(4, int(self.hex_size * 0.28))
+        r = min(max(4, int(self.hex_size * 0.28)), 18)
         pygame.draw.polygon(
             self.surface, MISSION_CLR,
             [(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)],
@@ -566,7 +605,7 @@ class MapRenderer:
         elif self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
             radius = max(4, int(self.hex_size * SUBHEX_RATIO * 0.55))
         else:
-            radius = max(4, int(self.hex_size * 0.32))
+            radius = min(max(4, int(self.hex_size * 0.32)), 22)
 
         for (gx, gy), g_units in groups.items():
             n = len(g_units)

@@ -41,6 +41,7 @@ def _event_icon(event: str) -> str:
         "mission_resolved":   "[R]",
         "funds_adjusted":     "[$]",
         "structure_built":    "[S]",
+        "structure_deleted":  "[S]",
         "supply_warning":     "[!]",
         "territory_captured":  "[T]",
         "group_added":         "[G]",
@@ -75,6 +76,7 @@ def draw_toolbar(
     campaign_name: str,
     hover_pos:    Tuple[int, int],
     phase:        str = PHASE_MORNING,
+    has_undo:     bool = False,
 ) -> List[Hitbox]:
     """
     Draw top toolbar. Returns list of clickable Hitboxes:
@@ -143,7 +145,8 @@ def draw_toolbar(
     surface.blit(t_lbl, t_lbl.get_rect(center=turn_rect.center))
     x += 164
 
-    btn("next_turn", "Next Phase >>", 118)
+    btn("next_turn",    "Next Phase >>", 118)
+    btn("revert_phase", "< Undo",        72, danger=(not has_undo))
 
     # Right-aligned: campaign name
     name_font = pygame.font.SysFont("monospace", 14, bold=True)
@@ -314,9 +317,15 @@ def draw_sidebar(
                 pygame.draw.rect(surface, bg, row, border_radius=2)
                 f_color = campaign.factions[s.faction_id].color if s.faction_id and s.faction_id in campaign.factions else (90, 90, 90)
                 pygame.draw.rect(surface, f_color, pygame.Rect(row.x + 2, row.y + 2, 4, 16), border_radius=1)
-                lbl = font_sm.render(f"{s.structure_type[:10]}: {s.name[:14]}", True, TEXT)
+                lbl = font_sm.render(f"{s.structure_type[:10]}: {s.name[:12]}", True, TEXT)
                 surface.blit(lbl, (row.x + 10, row.y + 4))
                 boxes.append(Hitbox("structure", row, s.id))
+                # Delete button
+                del_r = pygame.Rect(row.right - 20, row.y + 2, 18, 16)
+                del_bg = (180, 40, 40) if del_r.collidepoint(hover_pos) else (100, 30, 30)
+                pygame.draw.rect(surface, del_bg, del_r, border_radius=2)
+                surface.blit(font_sm.render("X", True, (255, 100, 100)), (del_r.x + 5, del_r.y + 2))
+                boxes.append(Hitbox("delete_structure", del_r, s.id))
                 cy += 22
 
         # Missions in this hex

@@ -201,16 +201,18 @@ def generate_operational_map(
     from game.constants import OPERATIONAL_RADIUS
     hexes = hex_range(Hex(0, 0), OPERATIONAL_RADIUS)
 
-    # Determine base terrain bias from parent
-    water_like = parent_terrain in (TERRAIN_DEEP_WATER, TERRAIN_WATER, TERRAIN_COAST)
-    mountain_like = parent_terrain in (TERRAIN_MOUNTAINS, TERRAIN_VOLCANIC)
-
     result: TerrainMap = {}
     for h in hexes:
         r = rng.random()
-        if water_like:
-            t = TERRAIN_WATER if r < 0.6 else TERRAIN_COAST
-        elif mountain_like:
+        if parent_terrain == TERRAIN_DEEP_WATER:
+            t = TERRAIN_DEEP_WATER
+        elif parent_terrain == TERRAIN_WATER:
+            t = TERRAIN_DEEP_WATER if r < 0.20 else TERRAIN_WATER
+        elif parent_terrain == TERRAIN_COAST:
+            if r < 0.35:   t = TERRAIN_COAST
+            elif r < 0.65: t = TERRAIN_WATER
+            else:          t = TERRAIN_PLAINS
+        elif parent_terrain in (TERRAIN_MOUNTAINS, TERRAIN_VOLCANIC):
             t = TERRAIN_MOUNTAINS if r < 0.5 else TERRAIN_HILLS
         elif parent_terrain == TERRAIN_FOREST:
             t = TERRAIN_FOREST if r < 0.6 else TERRAIN_PLAINS

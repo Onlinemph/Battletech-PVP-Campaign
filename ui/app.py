@@ -3,6 +3,7 @@ Main Pygame application - the GM's campaign manager window.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -70,6 +71,9 @@ class App:
 
         # Modal dialog
         self.dialog = None
+
+        # Undo stack (session-only JSON snapshots, max 10)
+        self._phase_undo_stack: list = []
 
         # Message toast
         self._toast      = ""
@@ -235,6 +239,8 @@ class App:
             self._zoom(-1, (self.width // 2, self.height // 2))
         elif k == pygame.K_n:
             self._handle_toolbar("next_turn")
+        elif k == pygame.K_z and (event.mod & pygame.KMOD_CTRL):
+            self._handle_toolbar("revert_phase")
         elif k == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
             self._handle_toolbar("save")
 
@@ -351,9 +357,20 @@ class App:
                 self.dialog = ExportDialog((self.width, self.height), factions)
         elif name == "next_turn":
             if self.campaign:
+                snap = json.dumps(self.campaign.to_dict())
+                self._phase_undo_stack.append(snap)
+                if len(self._phase_undo_stack) > 10:
+                    self._phase_undo_stack.pop(0)
                 day, phase = next_phase(self.campaign)
                 abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
                 self._toast_msg(f"Day {day} · {abbr}")
+                from game.campaign import SAVES_DIR
+                save_campaign(self.campaign, SAVES_DIR / "autosave.json")
+        elif name == "revert_phase":
+            if self.campaign and self._phase_undo_stack:
+                snap = self._phase_undo_stack.pop()
+                self.campaign = Campaign.from_dict(json.loads(snap))
+                self._toast_msg("Reverted to previous phase")
         elif name == "add_faction":
             self.dialog = AddFactionDialog((self.width, self.height))
         elif name == "add_group":
@@ -420,6 +437,9 @@ class App:
             s = self.campaign.structures.get(box.data)
             if s:
                 self._toast_msg(f"Structure: {s.name} ({s.structure_type})")
+        elif box.name == "delete_structure":
+            self.dialog = ConfirmDialog((self.width, self.height), "Delete this structure?")
+            self.dialog._delete_struct_id = box.data  # type: ignore[attr-defined]
         elif box.name == "edit_note":
             note_key = box.data
             existing = self.campaign.hex_notes.get(note_key, "")
@@ -463,11 +483,13 @@ class App:
             r = d.result
             self.campaign = new_campaign(r["name"], r["width"], r["height"],
                                           r["seed"], r["water"])
+            self._phase_undo_stack.clear()
             self._center_on((r["width"] // 2, r["height"] // 2))
             self._toast_msg(f"Created '{r['name']}' (seed {self.campaign.map_seed})")
 
         elif isinstance(d, LoadDialog):
             self.campaign = load_campaign(d.result)
+            self._phase_undo_stack.clear()
             self._center_on((self.campaign.map_width // 2, self.campaign.map_height // 2))
             self._toast_msg(f"Loaded: {d.result.name}")
 
@@ -576,6 +598,11 @@ class App:
                 if self.selected_unit_id == uid:
                     self.selected_unit_id = None
                 self._toast_msg("Unit deleted")
+            sid = getattr(d, "_delete_struct_id", None)
+            if d.result and sid and sid in self.campaign.structures:
+                s = self.campaign.structures.pop(sid)
+                log_event(self.campaign, "structure_deleted", f"Structure deleted: {s.name}")
+                self._toast_msg(f"Deleted: {s.name}")
 
     # ── drawing ──────────────────────────────────────────────────────────────
 
@@ -617,6 +644,7 @@ class App:
             self.screen, self.width, self.tool, self.scale,
             self.campaign.current_turn, self.campaign.name, mouse_pos,
             phase=self.campaign.current_phase,
+            has_undo=bool(self._phase_undo_stack),
         )
 
         # Map
@@ -674,6 +702,13 @@ class App:
         )
         renderer.draw()
 
+        # Hover tooltip — unit names above cursor
+        if hover_hex and self.scale == SCALE_STRATEGIC:
+            tip_units = [u for u in self.campaign.units.values()
+                         if u.position == hover_hex]
+            if tip_units:
+                self._draw_hover_tooltip(mouse_pos, tip_units)
+
         # Sidebar
         self._sidebar_boxes = draw_sidebar(
             self.screen, self.width - SIDEBAR_W, TOOLBAR_H,
@@ -691,6 +726,28 @@ class App:
             self.screen, 0, self.height - STATUSBAR_H, self.width,
             hover_hex, tname, self.hex_size, self.scale, self.op_hex, self.tool,
         )
+
+    def _draw_hover_tooltip(self, pos: Tuple[int, int], units: list) -> None:
+        font = pygame.font.SysFont("monospace", 11, bold=True)
+        lines = []
+        for u in units[:5]:
+            f = self.campaign.factions.get(u.faction_id)
+            fname = f.name[:10] if f else "?"
+            lines.append((f"{u.name[:16]} [{u.unit_type[:4]}]", f.color if f else (150, 150, 150)))
+        if not lines:
+            return
+        pad, lh = 6, 14
+        w = max(font.size(t)[0] for t, _ in lines) + pad * 2
+        h = len(lines) * lh + pad
+        tx = min(pos[0] + 14, self.width - w - 4)
+        ty = max(pos[1] - h - 8, TOOLBAR_H + 4)
+        bg = pygame.Surface((w, h), pygame.SRCALPHA)
+        bg.fill((15, 15, 25, 210))
+        self.screen.blit(bg, (tx, ty))
+        pygame.draw.rect(self.screen, (80, 80, 100), pygame.Rect(tx, ty, w, h), 1, border_radius=3)
+        for i, (text, color) in enumerate(lines):
+            surf = font.render(text, True, color)
+            self.screen.blit(surf, (tx + pad, ty + pad // 2 + i * lh))
 
     def _draw_toast(self) -> None:
         if not self._toast:
