@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from game.constants import DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT
-from game.map_gen import generate_map, generate_operational_map, generate_tactical_map
+from game.map_gen import generate_map, generate_elevation_map, generate_operational_map, generate_tactical_map
 from game.models import Campaign, Faction, Unit, Mission, Structure, Group, Objective, new_id
 from game.constants import *
 
@@ -45,6 +45,7 @@ def strategic_reachable(campaign, position: tuple, walk_mp: int,
         r = max(1, round(budget))
         return {h.to_tuple() for h in hex_range(Hex.from_tuple(position), r)}
 
+    elev_map  = campaign.elevation_map
     dist = {position: 0.0}
     heap = [(0.0, position)]
     reachable = {position}
@@ -52,12 +53,18 @@ def strategic_reachable(campaign, position: tuple, walk_mp: int,
         cost, pos = heapq.heappop(heap)
         if cost > dist.get(pos, float("inf")) + 1e-9:
             continue
+        cur_elev = elev_map.get(pos, 3)
         for nb in hex_neighbors(Hex.from_tuple(pos)):
             nb_t = nb.to_tuple()
             terrain = campaign.terrain_map.get(nb_t, TERRAIN_PLAINS)
             entry_cost = TERRAIN_MOVE_COST.get(terrain)
             if entry_cost is None:
                 continue  # impassable (deep water, etc.)
+            # Slope penalty: steep grades cost extra; cliffs are impassable
+            delta = abs(elev_map.get(nb_t, 3) - cur_elev)
+            if delta >= SLOPE_IMPASSABLE:
+                continue
+            entry_cost += delta * SLOPE_COST_PER_LEVEL
             new_cost = cost + entry_cost
             if new_cost <= budget + 1e-9 and new_cost < dist.get(nb_t, float("inf")) - 1e-9:
                 dist[nb_t] = new_cost
@@ -81,13 +88,15 @@ def new_campaign(
     if seed == 0:
         seed = random.randint(1, 999_999)
 
-    terrain = generate_map(map_width, map_height, seed=seed, water_ratio=water_ratio)
+    terrain   = generate_map(map_width, map_height, seed=seed, water_ratio=water_ratio)
+    elevation = generate_elevation_map(terrain, seed)
     return Campaign(
         name=name,
         map_width=map_width,
         map_height=map_height,
         map_seed=seed,
         terrain_map=terrain,
+        elevation_map=elevation,
     )
 
 

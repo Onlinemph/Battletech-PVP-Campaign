@@ -136,6 +136,21 @@ def generate_map(
     return terrain_map
 
 
+def generate_elevation_map(terrain_map: TerrainMap, seed: int) -> Dict[Tuple[int, int], int]:
+    """Generate integer elevation (0-10) for each hex, terrain-consistent.
+
+    Uses TERRAIN_ELEVATION_RANGE so mountains are always high, water always
+    low, etc.  A different seed offset means the elevation noise is independent
+    of the terrain noise while still being fully deterministic.
+    """
+    rng = random.Random(seed ^ 0xE1E07A71)
+    result: Dict[Tuple[int, int], int] = {}
+    for pos, terrain in terrain_map.items():
+        lo, hi = TERRAIN_ELEVATION_RANGE.get(terrain, (2, 4))
+        result[pos] = rng.randint(lo, hi)
+    return result
+
+
 def generate_tactical_map(
     parent_terrain: str,
     composite_key:  str,

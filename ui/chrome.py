@@ -389,6 +389,10 @@ def draw_sidebar(
             terrain_id = tmap.get(selected_hex, "?")
             scale_m = LOW_ALT_HEX_SIZE_M
         surface.blit(font.render(f"Terrain: {terrain_name(terrain_id)}", True, TEXT), (x + 12, cy)); cy += 16
+        if scale == SCALE_STRATEGIC and campaign.elevation_map:
+            elev = campaign.elevation_map.get(selected_hex, 3)
+            elev_bar = "█" * elev + "░" * (10 - elev)
+            surface.blit(font_sm.render(f"Elev: {elev:2d}/10  {elev_bar}", True, (160, 200, 255)), (x + 12, cy)); cy += 14
         if scale_m >= 1000:
             scale_str = f"{scale_m // 1000} km across"
         else:

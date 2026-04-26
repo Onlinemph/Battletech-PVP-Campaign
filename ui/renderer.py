@@ -381,6 +381,7 @@ class MapRenderer:
 
     def _draw_hex_fill(self, h: Hex, terrain: str) -> None:
         key = h.to_tuple()
+        is_fog = False
         if self.fog_set is None:
             color = terrain_color(terrain)
         elif key in self.fog_set:
@@ -389,6 +390,12 @@ class MapRenderer:
             color = _dim_color(terrain_color(terrain))
         else:
             color = FOG
+            is_fog = True
+        # Elevation shading: brighter = higher ground (only on visible strategic hexes)
+        if not is_fog and self.scale == SCALE_STRATEGIC:
+            elev  = self.campaign.elevation_map.get(key, 3)
+            shade = 0.75 + (elev / 10) * 0.50   # 0.75 at elev 0 → 1.25 at elev 10
+            color = tuple(min(255, max(0, int(c * shade))) for c in color)
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
         pygame.draw.polygon(self.surface, color, pts)
 

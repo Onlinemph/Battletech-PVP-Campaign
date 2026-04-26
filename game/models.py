@@ -231,9 +231,10 @@ class Campaign:
     current_turn: int                            = 1
     map_width:    int                            = DEFAULT_MAP_WIDTH
     map_height:   int                            = DEFAULT_MAP_HEIGHT
-    map_seed:     int                            = 0
-    terrain_map:  Dict[Tuple[int, int], str]     = field(default_factory=dict)
-    factions:     Dict[str, Faction]             = field(default_factory=dict)
+    map_seed:      int                            = 0
+    terrain_map:   Dict[Tuple[int, int], str]    = field(default_factory=dict)
+    elevation_map: Dict[Tuple[int, int], int]    = field(default_factory=dict)
+    factions:      Dict[str, Faction]            = field(default_factory=dict)
     units:        Dict[str, Unit]                = field(default_factory=dict)
     missions:     Dict[str, Mission]             = field(default_factory=dict)
     structures:   Dict[str, "Structure"]         = field(default_factory=dict)
@@ -273,8 +274,9 @@ class Campaign:
             "map_height":   self.map_height,
             "map_seed":     self.map_seed,
             "gm_notes":     self.gm_notes,
-            "terrain_map":  {f"{k[0]},{k[1]}": v for k, v in self.terrain_map.items()},
-            "factions":     {k: v.to_dict() for k, v in self.factions.items()},
+            "terrain_map":   {f"{k[0]},{k[1]}": v for k, v in self.terrain_map.items()},
+            "elevation_map": {f"{k[0]},{k[1]}": v for k, v in self.elevation_map.items()},
+            "factions":      {k: v.to_dict() for k, v in self.factions.items()},
             "units":        {k: v.to_dict() for k, v in self.units.items()},
             "missions":     {k: v.to_dict() for k, v in self.missions.items()},
             "structures":   {k: v.to_dict() for k, v in self.structures.items()},
@@ -309,15 +311,29 @@ class Campaign:
             return {tuple(int(x) for x in k.split(",")): v  # type: ignore[return-value]
                     for k, v in raw.items()}
 
+        def parse_emap(raw: dict) -> Dict[Tuple[int, int], int]:
+            return {tuple(int(x) for x in k.split(",")): int(v)
+                    for k, v in raw.items()}
+
+        terrain_map = parse_tmap(d.get("terrain_map", {}))
+
+        # Back-compat: generate elevation from terrain when loading old saves
+        if "elevation_map" in d:
+            elevation_map = parse_emap(d["elevation_map"])
+        else:
+            from game.map_gen import generate_elevation_map
+            elevation_map = generate_elevation_map(terrain_map, d.get("map_seed", 0))
+
         return cls(
-            name         = d["name"],
-            current_turn = d.get("current_turn", 1),
-            map_width    = d.get("map_width",  DEFAULT_MAP_WIDTH),
-            map_height   = d.get("map_height", DEFAULT_MAP_HEIGHT),
-            map_seed     = d.get("map_seed", 0),
-            gm_notes     = d.get("gm_notes", ""),
-            terrain_map  = parse_tmap(d.get("terrain_map", {})),
-            factions     = {k: Faction.from_dict(v) for k, v in d.get("factions", {}).items()},
+            name          = d["name"],
+            current_turn  = d.get("current_turn", 1),
+            map_width     = d.get("map_width",  DEFAULT_MAP_WIDTH),
+            map_height    = d.get("map_height", DEFAULT_MAP_HEIGHT),
+            map_seed      = d.get("map_seed", 0),
+            gm_notes      = d.get("gm_notes", ""),
+            terrain_map   = terrain_map,
+            elevation_map = elevation_map,
+            factions      = {k: Faction.from_dict(v) for k, v in d.get("factions", {}).items()},
             units        = {k: Unit.from_dict(v)    for k, v in d.get("units",    {}).items()},
             missions     = {k: Mission.from_dict(v)   for k, v in d.get("missions",   {}).items()},
             structures   = {k: Structure.from_dict(v) for k, v in d.get("structures", {}).items()},

@@ -5,7 +5,8 @@ from game.hex_grid import Hex, hex_range, hex_line, hex_distance
 from game.models import Campaign, Unit
 from game.constants import (STATUS_DESTROYED, STATUS_RETREATED,
                              TERRAIN_FOREST, UNIT_AEROSPACE,
-                             UNIT_DROPSHIP, DROPSHIP_SUPPLY_RANGE, PHASE_NIGHT)
+                             UNIT_DROPSHIP, DROPSHIP_SUPPLY_RANGE, PHASE_NIGHT,
+                             ELEVATION_VISION_DIV)
 from game.terrain import TERRAIN
 
 
@@ -30,6 +31,9 @@ def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
         center   = Hex.from_tuple(unit.position)
         is_aero  = unit.unit_type == UNIT_AEROSPACE
         vrange   = unit.vision_range
+        # High-ground bonus: +1 vision per ELEVATION_VISION_DIV levels
+        elev = campaign.elevation_map.get(unit.position, 3)
+        vrange += elev // ELEVATION_VISION_DIV
         if campaign.current_phase == PHASE_NIGHT and not is_aero:
             vrange = max(0, vrange - 1)
 

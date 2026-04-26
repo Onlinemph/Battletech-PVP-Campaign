@@ -206,3 +206,30 @@ TERRAIN_MOVE_COST = {
     TERRAIN_WATER:      3.0,      # mechs wade (very slow)
     TERRAIN_DEEP_WATER: None,     # impassable
 }
+
+# ── Elevation ─────────────────────────────────────────────────────────────────
+ELEVATION_MIN = 0
+ELEVATION_MAX = 10
+
+# Extra movement cost per elevation-unit of difference between adjacent hexes
+SLOPE_COST_PER_LEVEL = 0.4
+# Elevation delta that is treated as an impassable cliff
+SLOPE_IMPASSABLE     = 5
+# Elevation levels required for +1 vision range bonus
+ELEVATION_VISION_DIV = 3
+
+# Integer elevation range (min, max inclusive) generated per terrain type
+TERRAIN_ELEVATION_RANGE = {
+    TERRAIN_DEEP_WATER:  (0, 0),
+    TERRAIN_WATER:       (0, 1),
+    TERRAIN_COAST:       (1, 2),
+    TERRAIN_PLAINS:      (2, 4),
+    TERRAIN_DESERT:      (2, 4),
+    TERRAIN_ARCTIC:      (2, 6),
+    TERRAIN_FOREST:      (3, 5),
+    TERRAIN_HILLS:       (4, 6),
+    TERRAIN_URBAN:       (2, 4),
+    TERRAIN_INDUSTRIAL:  (2, 4),
+    TERRAIN_MOUNTAINS:   (6, 9),
+    TERRAIN_VOLCANIC:    (5, 9),
+}
