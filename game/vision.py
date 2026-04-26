@@ -10,57 +10,43 @@ from game.constants import (STATUS_DESTROYED, STATUS_RETREATED,
 from game.terrain import TERRAIN
 
 
-def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
-    """
-    Return the set of strategic hexes currently visible to faction_id.
+def unit_visible_hexes(campaign: Campaign, unit) -> Set[Tuple[int, int]]:
+    """Hexes visible to a single unit (same LOS rules as visible_hexes)."""
+    visible: Set[Tuple[int, int]] = set()
+    if unit.status in (STATUS_DESTROYED, STATUS_RETREATED) or unit.position is None:
+        return visible
+    center  = Hex.from_tuple(unit.position)
+    is_aero = unit.unit_type == UNIT_AEROSPACE
+    vrange  = unit.vision_range
+    vrange += campaign.elevation_map.get(unit.position, 3) // ELEVATION_VISION_DIV
+    if campaign.current_phase == PHASE_NIGHT and not is_aero:
+        vrange = max(0, vrange - 1)
+    for h in hex_range(center, vrange):
+        key  = h.to_tuple()
+        dist = hex_distance(center, h)
+        if dist > 1 and not is_aero:
+            line    = hex_line(center, h)
+            blocked = False
+            for mid in line[1:-1]:
+                tdef = TERRAIN.get(campaign.terrain_map.get(mid.to_tuple(), ""))
+                if tdef and tdef.blocks_vision:
+                    blocked = True
+                    break
+            if blocked:
+                continue
+        if dist > 0:
+            if campaign.terrain_map.get(key, "") == TERRAIN_FOREST and dist >= vrange:
+                continue
+        visible.add(key)
+    return visible
 
-    Rules:
-    - Blocking terrain (blocks_vision=True) in intermediate hexes cuts LOS
-      for ground units; aerospace ignore this.
-    - Forest in the TARGET hex reduces effective range by 1 for all units
-      (forest canopy conceals ground forces from both ground and air obs).
-    """
+
+def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
+    """Return the set of strategic hexes currently visible to faction_id."""
     visible: Set[Tuple[int, int]] = set()
     for unit in campaign.units.values():
-        if unit.faction_id != faction_id:
-            continue
-        if unit.status in (STATUS_DESTROYED, STATUS_RETREATED):
-            continue
-        if unit.position is None:
-            continue
-        center   = Hex.from_tuple(unit.position)
-        is_aero  = unit.unit_type == UNIT_AEROSPACE
-        vrange   = unit.vision_range
-        # High-ground bonus: +1 vision per ELEVATION_VISION_DIV levels
-        elev = campaign.elevation_map.get(unit.position, 3)
-        vrange += elev // ELEVATION_VISION_DIV
-        if campaign.current_phase == PHASE_NIGHT and not is_aero:
-            vrange = max(0, vrange - 1)
-
-        for h in hex_range(center, vrange):
-            key  = h.to_tuple()
-            dist = hex_distance(center, h)
-
-            # LOS: check intermediate hexes for blocking terrain
-            if dist > 1 and not is_aero:
-                line    = hex_line(center, h)
-                blocked = False
-                for mid in line[1:-1]:
-                    tdef = TERRAIN.get(campaign.terrain_map.get(mid.to_tuple(), ""))
-                    if tdef and tdef.blocks_vision:
-                        blocked = True
-                        break
-                if blocked:
-                    continue
-
-            # Forest concealment: target hex in forest → -1 effective range
-            if dist > 0:
-                target_terrain = campaign.terrain_map.get(key, "")
-                if target_terrain == TERRAIN_FOREST and dist >= vrange:
-                    continue
-
-            visible.add(key)
-
+        if unit.faction_id == faction_id:
+            visible |= unit_visible_hexes(campaign, unit)
     return visible
 
 

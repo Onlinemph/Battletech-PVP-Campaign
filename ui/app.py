@@ -892,6 +892,17 @@ class App:
                         center = Hex.from_tuple(u.sub_position)
                         highlight_hexes = {h.to_tuple() for h in hex_range(center, op_range)}
 
+        # Vision highlight: selected unit in select tool shows its LOS in green
+        if (highlight_hexes is None
+                and self.tool == "select"
+                and self.selected_unit_id
+                and self.scale == SCALE_STRATEGIC):
+            u = self.campaign.units.get(self.selected_unit_id)
+            if u and u.position:
+                from game.vision import unit_visible_hexes
+                highlight_hexes = unit_visible_hexes(self.campaign, u)
+                highlight_color = (60, 210, 100)
+
         # Supply indicators: orange ring on units out of supply range
         supply_set = None
         if self.scale == SCALE_STRATEGIC and self.campaign.factions:

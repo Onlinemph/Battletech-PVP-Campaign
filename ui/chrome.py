@@ -557,7 +557,9 @@ def draw_sidebar(
                          (x + 12, cy)); cy += 14
             surface.blit(font_sm.render(f"Faction has: {faction_res:,} C-Bills", True, TEXT_DIM),
                          (x + 12, cy)); cy += 14
-        surface.blit(font_sm.render(f"Vision: {u.vision_range} hex", True, TEXT), (x + 12, cy)); cy += 14
+        elev_bonus = campaign.elevation_map.get(u.position, 3) // ELEVATION_VISION_DIV if u.position else 0
+        vision_lbl = f"Vision: {u.vision_range}" + (f" +{elev_bonus} (elev)" if elev_bonus else "") + " hex"
+        surface.blit(font_sm.render(vision_lbl, True, (60, 210, 100)), (x + 12, cy)); cy += 14
         bv_color = TEXT_WARN if u.battle_value == 0 else TEXT
         bv_label = f"BV: {u.battle_value:,}" if u.battle_value else "BV: (not set)"
         surface.blit(font_sm.render(bv_label, True, bv_color), (x + 12, cy)); cy += 14
