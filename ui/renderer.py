@@ -292,6 +292,18 @@ class MapRenderer:
                 if h.to_tuple() in objectives_by_hex:
                     self._draw_objective_icons(h, objectives_by_hex[h.to_tuple()])
 
+        # Hex note indicator dots
+        if self.scale == SCALE_STRATEGIC and self.campaign.hex_notes:
+            for h, _ in hexes:
+                note_key = f"{h.q},{h.r}"
+                if note_key in self.campaign.hex_notes:
+                    cx_n, cy_n = self.hex_center(h)
+                    dot_x = int(cx_n + self.hex_size * 0.42)
+                    dot_y = int(cy_n - self.hex_size * 0.48)
+                    dot_r = max(3, int(self.hex_size * 0.09))
+                    pygame.draw.circle(self.surface, (255, 220, 50), (dot_x, dot_y), dot_r)
+                    pygame.draw.circle(self.surface, (180, 140,  0), (dot_x, dot_y), dot_r, 1)
+
         # Draw units
         for h, terrain in hexes:
             key = h.to_tuple()

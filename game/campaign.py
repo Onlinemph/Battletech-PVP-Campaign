@@ -400,7 +400,8 @@ def _process_income(campaign: Campaign) -> None:
 
 
 def _update_territory(campaign: Campaign) -> None:
-    """Auto-capture hexes occupied exclusively by one faction's active units."""
+    """Auto-capture hexes occupied exclusively by one faction's active units.
+    Also auto-captures any objectives on those hexes."""
     from typing import Set as _Set
     occupied: dict = {}
     for u in campaign.units.values():
@@ -415,6 +416,14 @@ def _update_territory(campaign: Campaign) -> None:
                 f = campaign.factions.get(fid)
                 log_event(campaign, "territory_captured",
                           f"{f.name if f else fid} captured ({pos[0]},{pos[1]})")
+            # Auto-capture any objectives sitting in this uncontested hex
+            for o in campaign.objectives.values():
+                if o.position == pos and o.faction_id != fid:
+                    o.faction_id = fid
+                    o.status     = OBJECTIVE_CAPTURED
+                    f = campaign.factions.get(fid)
+                    log_event(campaign, "objective_captured",
+                              f"{f.name if f else fid} seized '{o.name}' ({o.vp_value} VP)")
 
 
 def log_event(campaign: Campaign, event: str, detail: str) -> None:

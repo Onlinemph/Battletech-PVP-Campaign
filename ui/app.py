@@ -606,6 +606,10 @@ class App:
                 self.pan_x  = (self.width - SIDEBAR_W) / 2
                 self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
                 self._toast_msg(f"Contact! Drilling into hex ({pos[0]},{pos[1]})")
+        elif box.name == "reset_all_moves":
+            for u in self.campaign.units.values():
+                u.has_moved = False
+            self._toast_msg("All unit moves reset")
         elif box.name == "reset_move":
             u = self.campaign.units.get(box.data)
             if u:

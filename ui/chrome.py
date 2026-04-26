@@ -221,6 +221,13 @@ def draw_sidebar(
         surface.blit(font_sm.render("End Turn →", True, BTN_TEXT), (et_r.x + 4, et_r.y + 3))
         boxes.append(Hitbox("end_turn", et_r))
         cy += 32
+        rst_all_r = pygame.Rect(x + 6, cy, width - 12, 18)
+        rst_bg = BTN_HOVER if rst_all_r.collidepoint(hover_pos) else BTN_NORMAL
+        pygame.draw.rect(surface, rst_bg, rst_all_r, border_radius=2)
+        surface.blit(font_sm.render("↺ Reset All Moves", True, BTN_TEXT),
+                     (rst_all_r.x + 8, rst_all_r.y + 3))
+        boxes.append(Hitbox("reset_all_moves", rst_all_r))
+        cy += 22
 
     # ── Factions ─────────────────────────────────────────────────────────────
     surface.blit(font_h.render("FACTIONS", True, TEXT_BRIGHT), (x + 12, cy))
