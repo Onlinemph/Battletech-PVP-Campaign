@@ -444,13 +444,13 @@ def draw_sidebar(
                 pygame.draw.rect(surface, f_color, pygame.Rect(row.x + 2, row.y + 2, 4, 16), border_radius=1)
                 lbl = font_sm.render(f"{s.structure_type[:10]}: {s.name[:12]}", True, TEXT)
                 surface.blit(lbl, (row.x + 10, row.y + 4))
-                boxes.append(Hitbox("structure", row, s.id))
-                # Delete button
+                # Delete button registered BEFORE row so it takes priority on click
                 del_r = pygame.Rect(row.right - 20, row.y + 2, 18, 16)
                 del_bg = (180, 40, 40) if del_r.collidepoint(hover_pos) else (100, 30, 30)
                 pygame.draw.rect(surface, del_bg, del_r, border_radius=2)
                 surface.blit(font_sm.render("X", True, (255, 100, 100)), (del_r.x + 5, del_r.y + 2))
                 boxes.append(Hitbox("delete_structure", del_r, s.id))
+                boxes.append(Hitbox("structure", row, s.id))
                 cy += 22
 
         # Missions in this hex

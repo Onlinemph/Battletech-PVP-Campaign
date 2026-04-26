@@ -493,7 +493,7 @@ class MapRenderer:
         if is_fog:
             return
         cx, cy = self.hex_center(h)
-        sz     = min(max(8, int(self.hex_size * 0.30)), 22)
+        sz     = min(max(16, int(self.hex_size * 0.55)), 44)
         for i, s in enumerate(structures[:3]):
             glyph, bg = STRUCTURE_GLYPH.get(s.structure_type, ("?", (120, 100, 80)))
             # Stack multiple structures horizontally

@@ -137,6 +137,18 @@ class App:
         self.pan_x = (self.width - SIDEBAR_W) / 2 - cx
         self.pan_y = (self.height - TOOLBAR_H - STATUSBAR_H) / 2 - cy
 
+    def _enter_operational(self, hex_pos: Tuple[int, int]) -> None:
+        """Switch to operational scale for hex_pos, auto-zooming to fit the sub-map."""
+        from game.constants import OPERATIONAL_RADIUS
+        self.op_hex = hex_pos
+        self.scale  = SCALE_OPERATIONAL
+        # Pick the zoom level that best fits OPERATIONAL_RADIUS hexes in the viewport
+        map_short = min(self.width - SIDEBAR_W, self.height - TOOLBAR_H - STATUSBAR_H)
+        target = map_short * 0.72 / (OPERATIONAL_RADIUS * 3)
+        self.zoom_idx = min(range(len(ZOOM_LEVELS)), key=lambda i: abs(ZOOM_LEVELS[i] - target))
+        self.pan_x = (self.width - SIDEBAR_W) / 2
+        self.pan_y = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+
     def _map_rect(self) -> pygame.Rect:
         return pygame.Rect(0, TOOLBAR_H,
                            self.width - SIDEBAR_W,
@@ -528,14 +540,13 @@ class App:
             self.tool = name[5:]
             self.move_source_unit = None
         elif name == "view_strategic":
-            self.scale = SCALE_STRATEGIC
+            if self.op_hex:
+                self._center_on(self.op_hex)
+            self.scale  = SCALE_STRATEGIC
             self.op_hex = None
         elif name == "view_operational":
             if self.selected_hex and self.scale == SCALE_STRATEGIC:
-                self.op_hex = self.selected_hex
-                self.scale  = SCALE_OPERATIONAL
-                self.pan_x  = (self.width - SIDEBAR_W) / 2
-                self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+                self._enter_operational(self.selected_hex)
                 self._toast_msg(f"Drill-down into {self.selected_hex}")
             else:
                 self._toast_msg("Select a strategic hex first")
@@ -601,10 +612,7 @@ class App:
             pos = box.data
             self.selected_hex = pos
             if self.scale == SCALE_STRATEGIC:
-                self.op_hex = pos
-                self.scale  = SCALE_OPERATIONAL
-                self.pan_x  = (self.width - SIDEBAR_W) / 2
-                self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+                self._enter_operational(pos)
                 self._toast_msg(f"Contact! Drilling into hex ({pos[0]},{pos[1]})")
         elif box.name == "reset_all_moves":
             for u in self.campaign.units.values():
@@ -1021,12 +1029,9 @@ class App:
 
         # Drill-down
         if self.scale == SCALE_STRATEGIC:
-            def _drill():
-                self.op_hex = coord
-                self.scale  = SCALE_OPERATIONAL
-                self.pan_x  = (self.width - SIDEBAR_W) / 2
-                self.pan_y  = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
-                self._toast_msg(f"Drilling into {coord}")
+            def _drill(c=coord):
+                self._enter_operational(c)
+                self._toast_msg(f"Drilling into {c}")
             items.append(("Drill down", _drill))
 
         # Move selected unit here
