@@ -58,11 +58,12 @@ class App:
         self.campaign: Optional[Campaign] = None
 
         # View state
-        self.scale       = SCALE_STRATEGIC
+        self.scale             = SCALE_STRATEGIC
         self.op_hex: Optional[Tuple[int, int]] = None
-        self.zoom_idx    = 3
-        self.pan_x       = 0.0
-        self.pan_y       = 0.0
+        self.zoom_idx          = 3
+        self._pre_op_zoom_idx  = 3   # saved strategic zoom when drilling into operational
+        self.pan_x             = 0.0
+        self.pan_y             = 0.0
 
         # Interaction state
         self.tool          = "select"     # select, move, add_unit, add_mission, delete
@@ -140,6 +141,7 @@ class App:
     def _enter_operational(self, hex_pos: Tuple[int, int]) -> None:
         """Switch to operational scale for hex_pos, auto-zooming to fit the sub-map."""
         from game.constants import OPERATIONAL_RADIUS
+        self._pre_op_zoom_idx = self.zoom_idx   # remember strategic zoom for return trip
         self.op_hex = hex_pos
         self.scale  = SCALE_OPERATIONAL
         # Pick the zoom level that best fits OPERATIONAL_RADIUS hexes in the viewport
@@ -540,6 +542,7 @@ class App:
             self.tool = name[5:]
             self.move_source_unit = None
         elif name == "view_strategic":
+            self.zoom_idx = self._pre_op_zoom_idx   # restore zoom from before drill-down
             if self.op_hex:
                 self._center_on(self.op_hex)
             self.scale  = SCALE_STRATEGIC

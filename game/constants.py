@@ -8,6 +8,8 @@ LOW_ALT_HEX_SIZE_M  = OPERATIONAL_HEX_M
 
 # Operational sub-map radius (low-altitude hexes visible when drilling into a strategic hex)
 OPERATIONAL_RADIUS = 3   # hex-radius → 37 hexes
+# Tactical (mapsheet) sub-map radius — radius 2 = 19 hexes, one per BT mapsheet tile
+TACTICAL_RADIUS    = 2   # hex-radius → 19 hexes
 
 SCALE_STRATEGIC   = "strategic"
 SCALE_OPERATIONAL = "operational"
