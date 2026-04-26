@@ -371,7 +371,10 @@ def draw_sidebar(
                 pygame.draw.circle(surface, fc, (row.x + 10, row.y + 10), 5)
                 lbl = font_sm.render(f"{u.name[:16]} [{u.unit_type[:4]}]", True, TEXT)
                 surface.blit(lbl, (row.x + 20, row.y + 4))
-                if u.walk_mp:
+                if u.has_moved:
+                    mv_surf = font_sm.render("✓moved", True, (200, 160, 60))
+                    surface.blit(mv_surf, (row.right - mv_surf.get_width() - 4, row.y + 4))
+                elif u.walk_mp:
                     mp_surf = font_sm.render(f"{u.walk_mp}/{u.run_mp}", True, (140, 200, 140))
                     surface.blit(mp_surf, (row.right - mp_surf.get_width() - 4, row.y + 4))
                 boxes.append(Hitbox("unit", row, u.id))
@@ -483,6 +486,8 @@ def draw_sidebar(
         from game.constants import STATUS_REPAIRING
         status_color = TEXT_WARN if u.status != "active" else TEXT
         surface.blit(font_sm.render(f"Status: {u.status}", True, status_color), (x + 12, cy)); cy += 14
+        if u.has_moved:
+            surface.blit(font_sm.render("Moved this phase", True, (200, 160, 60)), (x + 12, cy)); cy += 14
         if u.status == STATUS_REPAIRING and u.repair_cost:
             faction_res = campaign.factions[u.faction_id].resources if u.faction_id in campaign.factions else 0
             can_afford  = faction_res >= u.repair_cost

@@ -244,6 +244,9 @@ def next_phase(campaign: Campaign) -> tuple:
         _process_income(campaign)
         campaign.current_turn += 1
 
+    for u in campaign.units.values():
+        u.has_moved = False
+
     _detect_contacts(campaign)
     _detect_sensor_contacts(campaign)
     abbr = PHASE_ABBR.get(campaign.current_phase, "??")

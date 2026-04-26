@@ -48,6 +48,7 @@ class Unit:
     walk_mp:      int  = 4                      # BattleTech Walk movement points
     run_mp:       int  = 6                      # BattleTech Run movement points
     battle_value: int  = 0                      # MUL / TRO Battle Value for force balancing
+    has_moved:    bool = False                   # True once moved this strategic phase
     group_id:     Optional[str] = None          # lance/group membership
     roster:       List[RosterEntry] = field(default_factory=list)
     notes:        str = ""
@@ -76,6 +77,7 @@ class Unit:
         d.setdefault("walk_mp",      4)
         d.setdefault("run_mp",       6)
         d.setdefault("battle_value", 0)
+        d.setdefault("has_moved",    False)
         return cls(**d)
 
 

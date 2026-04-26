@@ -354,8 +354,9 @@ class App:
         if self.deploy_unit_id:
             u = self.campaign.units.get(self.deploy_unit_id)
             if u:
-                u.position = coord
+                u.position     = coord
                 u.sub_position = sub.to_tuple() if sub else None
+                u.has_moved    = True
                 if u.status == STATUS_RESERVE:
                     u.status = STATUS_ACTIVE
                 log_event(self.campaign, "unit_deployed",
@@ -399,15 +400,20 @@ class App:
                 if self.move_source_unit is None:
                     hex_units = [u for u in self.campaign.units.values() if u.position == coord]
                     if hex_units:
-                        self.move_source_unit  = hex_units[0].id
-                        self.selected_unit_id  = hex_units[0].id
-                        self._toast_msg(f"Move {hex_units[0].name}: click destination")
+                        u = hex_units[0]
+                        if u.has_moved:
+                            self._toast_msg(f"{u.name} already moved this phase")
+                            return
+                        self.move_source_unit = u.id
+                        self.selected_unit_id = u.id
+                        self._toast_msg(f"Move {u.name}: click destination")
                 else:
                     u = self.campaign.units.get(self.move_source_unit)
                     if u is not None:
                         u.position     = coord
                         u.sub_position = sub
                         u.tac_position = tac
+                        u.has_moved    = True
                         detail = _fmt_coord(coord, sub, tac)
                         self._toast_msg(f"Moved {u.name} to {detail}")
                         log_event(self.campaign, "unit_moved",

@@ -552,7 +552,8 @@ class MapRenderer:
                                and unit.id not in self.supply_set)
                 _draw_unit_circle(self.surface, (ux, uy), radius, fc, status_border,
                                   UNIT_LABEL.get(unit.unit_type, "?"), unit_font,
-                                  unit.status == STATUS_DESTROYED, unsupplied)
+                                  unit.status == STATUS_DESTROYED, unsupplied,
+                                  unit.has_moved)
 
     # ── export surface ────────────────────────────────────────────────────────
 
@@ -619,9 +620,11 @@ def _draw_unit_circle(
     font:       pygame.font.Font,
     dead:       bool = False,
     unsupplied: bool = False,
+    has_moved:  bool = False,
 ) -> None:
     cx, cy = int(center[0]), int(center[1])
-    alpha_fill = tuple(max(0, min(255, int(c * (0.5 if dead else 1.0)))) for c in fill)
+    dim = 0.5 if dead else (0.6 if has_moved else 1.0)
+    alpha_fill = tuple(max(0, min(255, int(c * dim))) for c in fill)
     pygame.draw.circle(surface, alpha_fill, (cx, cy), radius)
     pygame.draw.circle(surface, border,     (cx, cy), radius, max(1, radius // 4))
     if unsupplied:
@@ -630,5 +633,6 @@ def _draw_unit_circle(
         pygame.draw.line(surface, (200, 40, 40), (cx - radius + 2, cy - radius + 2),
                          (cx + radius - 2, cy + radius - 2), 2)
     else:
-        txt = font.render(label, True, (255, 255, 255))
+        label_color = (255, 255, 255) if not has_moved else (160, 160, 160)
+        txt = font.render(label, True, label_color)
         surface.blit(txt, txt.get_rect(center=(cx, cy)))
