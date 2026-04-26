@@ -82,6 +82,7 @@ class App:
 
         # Paint tool state
         self.paint_terrain   = "plains"
+        self.paint_elevation = 5
         self._paint_dragging = False
 
         # Right-click context menu
@@ -242,12 +243,18 @@ class App:
                 self._ctx_menu = None
                 return
 
-            # Terrain palette (when paint tool active)
+            # Terrain / elevation palette clicks
             if self.tool == "paint_terrain":
                 for pb in self._palette_boxes:
                     if pb.rect.collidepoint(event.pos):
                         self.paint_terrain = pb.data
                         self._toast_msg(f"Paint: {pb.data}")
+                        return
+            elif self.tool == "paint_elevation":
+                for pb in self._palette_boxes:
+                    if pb.rect.collidepoint(event.pos):
+                        self.paint_elevation = pb.data
+                        self._toast_msg(f"Elevation: {pb.data}")
                         return
 
             # Toolbar
@@ -265,7 +272,7 @@ class App:
                 return
             # Map area
             if event.button == 1:
-                self._paint_dragging = (self.tool == "paint_terrain")
+                self._paint_dragging = (self.tool in ("paint_terrain", "paint_elevation"))
                 self._on_map_click(event.pos)
             elif event.button == 3:
                 self._drag_active = True
@@ -479,10 +486,14 @@ class App:
             tmap = self._current_terrain_map()
             if coord in tmap:
                 tmap[coord] = self.paint_terrain
-                # Invalidate cached operational sub-map for this hex
                 key = f"{coord[0]},{coord[1]}"
                 self.campaign.op_maps.pop(key, None)
             return  # don't update selected_hex while painting
+
+        elif self.tool == "paint_elevation":
+            if self.scale == SCALE_STRATEGIC and coord in self.campaign.terrain_map:
+                self.campaign.elevation_map[coord] = self.paint_elevation
+            return
 
         self.selected_hex = coord
 
@@ -937,9 +948,11 @@ class App:
             hover_hex, tname, self.hex_size, self.scale, self.op_hex, self.tool,
         )
 
-        # Terrain palette (above statusbar, only when paint tool active)
+        # Terrain / elevation palette (above statusbar, only when paint tool active)
         if self.tool == "paint_terrain":
             self._draw_terrain_palette()
+        elif self.tool == "paint_elevation":
+            self._draw_elevation_palette()
 
         # Overlays (drawn last, on top of everything)
         if self._ctx_menu:
@@ -1130,6 +1143,46 @@ class App:
             self.screen.blit(lbl, lbl.get_rect(center=r.center))
             from ui.chrome import Hitbox
             self._palette_boxes.append(Hitbox(f"palette_{tid}", r, tid))
+
+    # ── elevation palette ────────────────────────────────────────────────────
+
+    # Hypsometric colors matching the renderer's shading bands (0=deep water → 10=peak)
+    _ELEV_COLORS = [
+        ( 20,  60, 180),  # 0 deep water
+        ( 40,  90, 200),  # 1 water
+        ( 60, 140,  80),  # 2 lowlands
+        ( 80, 160,  70),  # 3 plains
+        (140, 170,  60),  # 4 mid green
+        (180, 160,  50),  # 5 mid yellow
+        (200, 130,  40),  # 6 highland
+        (190, 100,  30),  # 7 upper highland
+        (160,  80,  40),  # 8 mountain brown
+        (180, 180, 180),  # 9 high rock
+        (240, 240, 255),  # 10 peak / snow
+    ]
+
+    def _draw_elevation_palette(self) -> None:
+        """Draw elevation swatches 0–10 above the statusbar when elevation tool active."""
+        from ui.chrome import Hitbox
+        font  = pygame.font.SysFont("monospace", 10, bold=True)
+        sw, sh = 38, 22
+        gap   = 3
+        total = 11 * (sw + gap) - gap
+        start_x = (self.width - SIDEBAR_W - total) // 2
+        y = self.height - STATUSBAR_H - sh - 4
+        self._palette_boxes = []
+        for elev in range(11):
+            x = start_x + elev * (sw + gap)
+            r = pygame.Rect(x, y, sw, sh)
+            color  = self._ELEV_COLORS[elev]
+            is_sel = (elev == self.paint_elevation)
+            pygame.draw.rect(self.screen, color, r, border_radius=2)
+            border = (255, 255, 255) if is_sel else (60, 60, 80)
+            pygame.draw.rect(self.screen, border, r, 2 if is_sel else 1, border_radius=2)
+            lbl_c = (255, 255, 255) if elev <= 8 else (30, 30, 30)
+            self.screen.blit(font.render(str(elev), True, lbl_c),
+                             font.render(str(elev), True, lbl_c).get_rect(center=r.center))
+            self._palette_boxes.append(Hitbox(f"palette_elev_{elev}", r, elev))
 
     # ── keybinding help overlay ──────────────────────────────────────────────
 

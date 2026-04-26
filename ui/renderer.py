@@ -257,6 +257,10 @@ class MapRenderer:
             for h, _ in hexes:
                 self._draw_hex_border(h)
 
+        # Elevation cliff/slope edges and number labels
+        if self.scale == SCALE_STRATEGIC and self.campaign.elevation_map:
+            self._draw_elevation_features(hexes)
+
         # Movement-range highlight overlay
         if self.highlight_hexes:
             for h, _ in hexes:
@@ -378,6 +382,59 @@ class MapRenderer:
             pygame.draw.polygon(self.surface, color, corners)
             if sub_r >= 4:
                 pygame.draw.polygon(self.surface, border_col, corners, 1)
+
+    def _draw_elevation_features(self, hexes: list) -> None:
+        """Draw cliff/steep-slope edge lines and elevation number labels."""
+        from game.hex_grid import hex_neighbors
+        # For a flat-top hex the 6 neighbor directions map to these corner-pair edges:
+        # neighbors order: E, NE, NW, W, SW, SE  →  corners: (0,5)(0,1)(1,2)(2,3)(3,4)(4,5)
+        EDGE = [(0, 5), (0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+        CLIFF_COLOR = (200,  50,  20)   # red — impassable cliff
+        STEEP_COLOR = (210, 130,  30)   # amber — costly steep grade
+        elev_map    = self.campaign.elevation_map
+        visible     = {h.to_tuple() for h, _ in hexes}
+
+        for h, _ in hexes:
+            key    = h.to_tuple()
+            e_cur  = elev_map.get(key, 3)
+            pts    = hex_corners(h, self.hex_size, self.ox, self.oy)
+            for i, nb in enumerate(hex_neighbors(h)):
+                nb_t  = nb.to_tuple()
+                if nb_t not in visible:
+                    continue
+                delta = abs(elev_map.get(nb_t, 3) - e_cur)
+                if delta >= SLOPE_IMPASSABLE:
+                    color = CLIFF_COLOR
+                    width = max(2, int(self.hex_size * 0.10))
+                elif delta >= 3:
+                    color = STEEP_COLOR
+                    width = max(1, int(self.hex_size * 0.05))
+                else:
+                    continue
+                ca, cb = EDGE[i]
+                pygame.draw.line(self.surface, color,
+                                 (int(pts[ca][0]), int(pts[ca][1])),
+                                 (int(pts[cb][0]), int(pts[cb][1])), width)
+
+        # Elevation number — shown at moderate+ zoom, top of each visible hex
+        if self.hex_size >= 26:
+            font = pygame.font.SysFont("monospace", max(7, int(self.hex_size * 0.26)), bold=True)
+            for h, _ in hexes:
+                key    = h.to_tuple()
+                is_fog = (self.fog_set is not None and key not in self.fog_set)
+                if is_fog:
+                    continue
+                elev = elev_map.get(key, 3)
+                cx, cy = self.hex_center(h)
+                # Hypsometric label color matching palette bands
+                if   elev <= 1: lc = (100, 150, 255)
+                elif elev <= 3: lc = (120, 210, 100)
+                elif elev <= 5: lc = (210, 200,  70)
+                elif elev <= 7: lc = (230, 140,  50)
+                else:           lc = (240, 220, 200)
+                surf = font.render(str(elev), True, lc)
+                self.surface.blit(surf, surf.get_rect(
+                    center=(int(cx), int(cy - self.hex_size * 0.52))))
 
     def _draw_hex_fill(self, h: Hex, terrain: str) -> None:
         key = h.to_tuple()

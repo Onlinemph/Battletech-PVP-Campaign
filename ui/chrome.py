@@ -130,8 +130,9 @@ def draw_toolbar(
     btn("tool_add_mission",   "+Miss",   58, active=(active_tool == "add_mission"))
     btn("tool_add_structure", "+Bldg",   58, active=(active_tool == "add_structure"))
     btn("tool_add_objective", "+Obj",    52, active=(active_tool == "add_objective"))
-    btn("tool_paint_terrain", "Paint",   56, active=(active_tool == "paint_terrain"))
-    btn("add_group",          "+Grp",    52)
+    btn("tool_paint_terrain",   "Paint",  56, active=(active_tool == "paint_terrain"))
+    btn("tool_paint_elevation", "Elev",  48, active=(active_tool == "paint_elevation"))
+    btn("add_group",            "+Grp",  52)
     btn("tool_delete",        "Del",     46, active=(active_tool == "delete"))
     sep()
 
