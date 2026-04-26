@@ -49,8 +49,9 @@ STATUS_RETREATED = "retreated"
 STATUS_CRIPPLED  = "crippled"
 STATUS_RESERVE   = "reserve"
 STATUS_REPAIRING = "repairing"
+STATUS_INORBIT   = "in_orbit"
 UNIT_STATUSES = [STATUS_ACTIVE, STATUS_CRIPPLED, STATUS_RETREATED, STATUS_RESERVE,
-                 STATUS_REPAIRING, STATUS_DESTROYED]
+                 STATUS_REPAIRING, STATUS_INORBIT, STATUS_DESTROYED]
 
 # Default vision range (strategic hexes) per unit type
 DEFAULT_VISION = {

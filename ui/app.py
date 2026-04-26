@@ -71,6 +71,7 @@ class App:
         self.faction_filter: Optional[str]   = None
         self.move_source_unit: Optional[str] = None  # when using move tool
         self.deploy_unit_id:  Optional[str] = None  # reserve unit being deployed
+        self.gm_force_move:   bool          = False  # bypass range/moved checks
 
         # Mouse pan
         self._drag_active        = False
@@ -292,7 +293,11 @@ class App:
         if k == pygame.K_ESCAPE:
             self._show_help = False
             self._ctx_menu  = None
-            if self.deploy_unit_id:
+            if self.gm_force_move:
+                self.gm_force_move    = False
+                self.move_source_unit = None
+                self._toast_msg("GM force-move cancelled")
+            elif self.deploy_unit_id:
                 self.deploy_unit_id = None
                 self._toast_msg("Deploy cancelled")
             elif self.scale == SCALE_OPERATIONAL:
@@ -413,12 +418,15 @@ class App:
                         u.position     = coord
                         u.sub_position = sub
                         u.tac_position = tac
-                        u.has_moved    = True
+                        if not self.gm_force_move:
+                            u.has_moved = True
                         detail = _fmt_coord(coord, sub, tac)
-                        self._toast_msg(f"Moved {u.name} to {detail}")
+                        gm_tag = " [GM]" if self.gm_force_move else ""
+                        self._toast_msg(f"Moved {u.name} to {detail}{gm_tag}")
                         log_event(self.campaign, "unit_moved",
-                                  f"{u.name} moved to ({coord[0]},{coord[1]})")
+                                  f"{u.name} moved to ({coord[0]},{coord[1]}){gm_tag}")
                     self.move_source_unit = None
+                    self.gm_force_move    = False
 
         elif self.tool == "add_unit":
             if not self.campaign.factions:
@@ -603,7 +611,25 @@ class App:
             if u:
                 u.has_moved = False
                 self._toast_msg(f"{u.name} move reset by GM")
-        elif box.name == "reserve_unit":
+        elif box.name == "force_move_unit":
+            u = self.campaign.units.get(box.data)
+            if u:
+                self.move_source_unit = u.id
+                self.gm_force_move    = True
+                self._toast_msg(f"GM: move {u.name} anywhere — click destination")
+        elif box.name == "land_unit":
+            u = self.campaign.units.get(box.data)
+            if u:
+                self.deploy_unit_id = box.data
+                self._toast_msg(f"Land {u.name} — click a hex to place")
+        elif box.name == "end_turn":
+            factions = list(self.campaign.factions.values())
+            if factions:
+                self.campaign.active_faction_idx = (
+                    self.campaign.active_faction_idx + 1) % len(factions)
+                nf = factions[self.campaign.active_faction_idx]
+                self._toast_msg(f"{nf.name}'s turn")
+        elif box.name in ("reserve_unit", "orbit_unit"):
             self.selected_unit_id = box.data
         elif box.name == "deploy_unit":
             u = self.campaign.units.get(box.data)
@@ -821,18 +847,24 @@ class App:
 
         # Movement range highlight when a source unit is selected in move mode
         highlight_hexes = None
+        highlight_color = (80, 160, 255)   # default blue
         if self.tool == "move" and self.move_source_unit:
             u = self.campaign.units.get(self.move_source_unit)
             if u:
-                eff_walk = self._group_walk_mp(u)
-                if self.scale == SCALE_STRATEGIC and u.position is not None:
-                    highlight_hexes = strategic_reachable(
-                        self.campaign, u.position, eff_walk, u.unit_type
-                    )
-                elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
-                    op_range = walk_mp_to_op_range(eff_walk)
-                    center = Hex.from_tuple(u.sub_position)
-                    highlight_hexes = {h.to_tuple() for h in hex_range(center, op_range)}
+                if self.gm_force_move:
+                    # GM override: highlight entire map in orange
+                    highlight_hexes = set(self._current_terrain_map().keys())
+                    highlight_color = (255, 140, 40)
+                else:
+                    eff_walk = self._group_walk_mp(u)
+                    if self.scale == SCALE_STRATEGIC and u.position is not None:
+                        highlight_hexes = strategic_reachable(
+                            self.campaign, u.position, eff_walk, u.unit_type
+                        )
+                    elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
+                        op_range = walk_mp_to_op_range(eff_walk)
+                        center = Hex.from_tuple(u.sub_position)
+                        highlight_hexes = {h.to_tuple() for h in hex_range(center, op_range)}
 
         # Supply indicators: orange ring on units out of supply range
         supply_set = None
@@ -858,9 +890,10 @@ class App:
             fog_set         = fog_set,
             hover_hex       = hover_hex,
             selected        = self.selected_hex,
-            highlight_hexes = highlight_hexes,
-            supply_set      = supply_set,
-            contact_hexes   = contact_hexes,
+            highlight_hexes  = highlight_hexes,
+            highlight_color  = highlight_color,
+            supply_set       = supply_set,
+            contact_hexes    = contact_hexes,
         )
         renderer.draw()
 
@@ -900,6 +933,8 @@ class App:
             self._draw_help_overlay()
         if self.deploy_unit_id:
             self._draw_deploy_banner()
+        if self.gm_force_move:
+            self._draw_gm_move_banner()
 
     def _draw_deploy_banner(self) -> None:
         u = self.campaign.units.get(self.deploy_unit_id) if self.deploy_unit_id else None
@@ -918,6 +953,24 @@ class App:
         pygame.draw.rect(self.screen, (80, 200, 80),
                          pygame.Rect(bx, by, bw, th + 10), 1, border_radius=4)
         self.screen.blit(font.render(text, True, (180, 255, 180)), (bx + 12, by + 5))
+
+    def _draw_gm_move_banner(self) -> None:
+        u = self.campaign.units.get(self.move_source_unit) if self.move_source_unit else None
+        if not u:
+            return
+        font = pygame.font.SysFont("monospace", 13, bold=True)
+        text = f"GM MOVE  {u.name}  —  click any hex   [Esc] to cancel"
+        tw, th = font.size(text)
+        map_r = self._map_rect()
+        bw = tw + 24
+        bx = map_r.x + (map_r.width - bw) // 2
+        by = map_r.y + 10
+        bg = pygame.Surface((bw, th + 10), pygame.SRCALPHA)
+        bg.fill((80, 40, 0, 220))
+        self.screen.blit(bg, (bx, by))
+        pygame.draw.rect(self.screen, (255, 140, 40),
+                         pygame.Rect(bx, by, bw, th + 10), 1, border_radius=4)
+        self.screen.blit(font.render(text, True, (255, 200, 120)), (bx + 12, by + 5))
 
     def _draw_hover_tooltip(self, pos: Tuple[int, int], units: list) -> None:
         font = pygame.font.SysFont("monospace", 11, bold=True)

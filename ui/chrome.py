@@ -9,7 +9,7 @@ from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
                              PHASE_COLOR, PHASE_ABBR, PHASE_MORNING,
                              OP_TURNS_PER_PHASE,
-                             STATUS_DESTROYED, STATUS_RETREATED)
+                             STATUS_DESTROYED, STATUS_RETREATED, STATUS_INORBIT)
 from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
@@ -204,6 +204,24 @@ def draw_sidebar(
     boxes: List[Hitbox] = []
     cy = y + 10
 
+    # ── Active Turn ───────────────────────────────────────────────────────────
+    faction_list = list(campaign.factions.values())
+    if faction_list:
+        af_idx = campaign.active_faction_idx % len(faction_list)
+        af = faction_list[af_idx]
+        banner = pygame.Rect(x + 6, cy, width - 12, 26)
+        pygame.draw.rect(surface, (30, 50, 30), banner, border_radius=3)
+        pygame.draw.rect(surface, af.color, banner, 1, border_radius=3)
+        pygame.draw.rect(surface, af.color, (banner.x + 4, banner.y + 5, 14, 16), border_radius=2)
+        lbl = font.render(f"  {af.name[:14]}'s Turn", True, af.color)
+        surface.blit(lbl, (banner.x + 22, banner.y + 6))
+        et_r = pygame.Rect(banner.right - 78, banner.y + 4, 72, 18)
+        et_bg = BTN_HOVER if et_r.collidepoint(hover_pos) else BTN_NORMAL
+        pygame.draw.rect(surface, et_bg, et_r, border_radius=2)
+        surface.blit(font_sm.render("End Turn →", True, BTN_TEXT), (et_r.x + 4, et_r.y + 3))
+        boxes.append(Hitbox("end_turn", et_r))
+        cy += 32
+
     # ── Factions ─────────────────────────────────────────────────────────────
     surface.blit(font_h.render("FACTIONS", True, TEXT_BRIGHT), (x + 12, cy))
     cy += 22
@@ -315,6 +333,31 @@ def draw_sidebar(
             surface.blit(font_sm.render("Deploy", True, BTN_TEXT), (dep_r.x + 4, dep_r.y + 2))
             boxes.append(Hitbox("deploy_unit", dep_r, u.id))
             boxes.append(Hitbox("reserve_unit", row,   u.id))
+            cy += 22
+        cy += 4
+
+    # ── In Orbit ──────────────────────────────────────────────────────────────
+    orbit_units = [u for u in campaign.units.values()
+                   if u.status == STATUS_INORBIT]
+    if orbit_units:
+        pygame.draw.line(surface, BORDER, (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+        surface.blit(font_h.render("IN ORBIT", True, (120, 160, 255)), (x + 12, cy)); cy += 20
+        for u in orbit_units:
+            row = pygame.Rect(x + 8, cy, width - 16, 20)
+            bg  = BTN_HOVER if row.collidepoint(hover_pos) else (20, 20, 50)
+            pygame.draw.rect(surface, bg, row, border_radius=2)
+            fac = campaign.factions.get(u.faction_id)
+            fc  = fac.color if fac else (90, 90, 90)
+            pygame.draw.circle(surface, fc, (row.x + 10, row.y + 10), 4)
+            abbr = _TYPE_ABBR.get(u.unit_type, "?")
+            lbl  = font_sm.render(f"{u.name[:16]} [{abbr}]", True, (180, 200, 255))
+            surface.blit(lbl, (row.x + 20, row.y + 4))
+            land_r  = pygame.Rect(row.right - 48, row.y + 2, 44, 16)
+            land_bg = (20, 60, 120) if land_r.collidepoint(hover_pos) else BTN_NORMAL
+            pygame.draw.rect(surface, land_bg, land_r, border_radius=2)
+            surface.blit(font_sm.render("Land", True, BTN_TEXT), (land_r.x + 6, land_r.y + 2))
+            boxes.append(Hitbox("land_unit",   land_r, u.id))
+            boxes.append(Hitbox("orbit_unit",  row,    u.id))
             cy += 22
         cy += 4
 
@@ -525,6 +568,13 @@ def draw_sidebar(
         pygame.draw.rect(surface, BORDER_LT, del_rect, 1, border_radius=3)
         surface.blit(font.render("Delete", True, BTN_TEXT), (del_rect.x + 18, del_rect.y + 4))
         boxes.append(Hitbox("delete_unit", del_rect, u.id))
+
+        fm_rect = pygame.Rect(x + 188, cy, 90, 22)
+        fm_bg = BTN_HOVER if fm_rect.collidepoint(hover_pos) else (70, 40, 10)
+        pygame.draw.rect(surface, fm_bg, fm_rect, border_radius=3)
+        pygame.draw.rect(surface, (200, 120, 40), fm_rect, 1, border_radius=3)
+        surface.blit(font_sm.render("GM Move", True, (255, 180, 80)), (fm_rect.x + 10, fm_rect.y + 5))
+        boxes.append(Hitbox("force_move_unit", fm_rect, u.id))
 
         if u.status == STATUS_REPAIRING:
             repair_rect = pygame.Rect(x + 12, cy + 28, 130, 22)

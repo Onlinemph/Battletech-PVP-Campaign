@@ -142,6 +142,7 @@ class MapRenderer:
         highlight_hexes: Optional[Set[Tuple[int, int]]] = None,
         supply_set:     Optional[Set[str]] = None,   # unit IDs that are supplied
         contact_hexes:  Optional[Dict[Tuple[int, int], list]] = None,
+        highlight_color: Tuple[int, int, int] = (80, 160, 255),
     ):
         self.surface         = surface
         self.rect            = rect
@@ -154,9 +155,10 @@ class MapRenderer:
         self.explored_set    = explored_set
         self.hover           = hover_hex
         self.selected        = selected
-        self.highlight_hexes = highlight_hexes
-        self.supply_set      = supply_set
-        self.contact_hexes   = contact_hexes
+        self.highlight_hexes  = highlight_hexes
+        self.supply_set       = supply_set
+        self.contact_hexes    = contact_hexes
+        self.highlight_color  = highlight_color
 
         self._font_sm = pygame.font.SysFont("monospace", max(9, int(hex_size * 0.55)), bold=True)
         self._font_co = pygame.font.SysFont("monospace", max(7, int(hex_size * 0.35)))
@@ -374,10 +376,11 @@ class MapRenderer:
 
     def _draw_hex_highlight(self, h: Hex) -> None:
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
+        r, g, b = self.highlight_color
         surf = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
-        pygame.draw.polygon(surf, (80, 160, 255, 55), pts)
+        pygame.draw.polygon(surf, (r, g, b, 55), pts)
         self.surface.blit(surf, (0, 0))
-        pygame.draw.polygon(self.surface, (80, 160, 255), pts, 1)
+        pygame.draw.polygon(self.surface, (r, g, b), pts, 1)
 
     def _draw_hex_territory(self, h: Hex, color: tuple) -> None:
         key = h.to_tuple()

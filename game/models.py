@@ -262,6 +262,8 @@ class Campaign:
     op_turn:         int                                 = 0
     # Hexes with multi-faction presence: "q,r" → [faction_id, ...]
     active_contacts: Dict[str, List[str]]                = field(default_factory=dict)
+    # Index into factions.values() for whose turn it currently is (0 = first faction)
+    active_faction_idx: int                              = 0
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -294,9 +296,10 @@ class Campaign:
             "groups":       {k: v.to_dict() for k, v in self.groups.items()},
             "objectives":   {k: v.to_dict() for k, v in self.objectives.items()},
             "combat_log":     list(self.combat_log),
-            "current_phase":  self.current_phase,
-            "op_turn":         self.op_turn,
-            "active_contacts": dict(self.active_contacts),
+            "current_phase":      self.current_phase,
+            "op_turn":            self.op_turn,
+            "active_contacts":    dict(self.active_contacts),
+            "active_faction_idx": self.active_faction_idx,
         }
         return d
 
@@ -336,7 +339,8 @@ class Campaign:
             groups          = {k: Group.from_dict(v) for k, v in d.get("groups", {}).items()},
             objectives      = {k: Objective.from_dict(v) for k, v in d.get("objectives", {}).items()},
             combat_log      = d.get("combat_log", []),
-            current_phase   = d.get("current_phase", PHASE_MORNING),
-            op_turn         = d.get("op_turn", 0),
-            active_contacts = d.get("active_contacts", {}),
+            current_phase      = d.get("current_phase", PHASE_MORNING),
+            op_turn            = d.get("op_turn", 0),
+            active_contacts    = d.get("active_contacts", {}),
+            active_faction_idx = d.get("active_faction_idx", 0),
         )
