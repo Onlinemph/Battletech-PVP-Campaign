@@ -487,7 +487,13 @@ def draw_sidebar(
         status_color = TEXT_WARN if u.status != "active" else TEXT
         surface.blit(font_sm.render(f"Status: {u.status}", True, status_color), (x + 12, cy)); cy += 14
         if u.has_moved:
-            surface.blit(font_sm.render("Moved this phase", True, (200, 160, 60)), (x + 12, cy)); cy += 14
+            surface.blit(font_sm.render("Moved this phase", True, (200, 160, 60)), (x + 12, cy))
+            rst_r = pygame.Rect(x + width - 82, cy - 1, 70, 16)
+            rst_bg = BTN_HOVER if rst_r.collidepoint(hover_pos) else BTN_NORMAL
+            pygame.draw.rect(surface, rst_bg, rst_r, border_radius=2)
+            surface.blit(font_sm.render("Reset", True, BTN_TEXT), (rst_r.x + 10, rst_r.y + 2))
+            boxes.append(Hitbox("reset_move", rst_r, u.id))
+            cy += 14
         if u.status == STATUS_REPAIRING and u.repair_cost:
             faction_res = campaign.factions[u.faction_id].resources if u.faction_id in campaign.factions else 0
             can_afford  = faction_res >= u.repair_cost
