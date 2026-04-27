@@ -194,6 +194,7 @@ def draw_sidebar(
     scale:        str,
     op_hex:       Optional[Tuple[int, int]],
     op_turn_moved: Optional[set] = None,
+    op_engagement: Optional[dict] = None,
 ) -> List[Hitbox]:
     """Right sidebar with factions, selected hex info, unit info."""
     rect = pygame.Rect(x, y, width, height)
@@ -232,61 +233,122 @@ def draw_sidebar(
         boxes.append(Hitbox("reset_all_moves", rst_all_r))
         cy += 22
 
-    # ── Operational Battle panel ──────────────────────────────────────────────
+    # ── Operational / Engagement panel ───────────────────────────────────────
     if scale == SCALE_OPERATIONAL and op_hex is not None:
+        from game.hex_grid import Hex, hex_distance
         _moved = op_turn_moved or set()
-        pygame.draw.line(surface, (180, 60, 60), (x + 6, cy), (x + width - 6, cy), 1); cy += 6
-        surface.blit(font_h.render("OP BATTLE", True, (255, 100, 100)), (x + 12, cy)); cy += 18
+        _eng   = op_engagement or {}
 
         hex_units = [u for u in campaign.units.values()
                      if u.position == op_hex
                      and u.status not in (STATUS_DESTROYED,)]
-
         by_faction: dict = {}
         for u in hex_units:
             by_faction.setdefault(u.faction_id, []).append(u)
 
-        if not hex_units:
-            surface.blit(font_sm.render("(no units in this hex)", True, TEXT_DIM), (x + 12, cy))
-            cy += 14
-        else:
-            for fid, units in by_faction.items():
-                f = campaign.factions.get(fid)
-                fc = f.color if f else (90, 90, 90)
-                fname = f.name[:18] if f else fid[:12]
-                total_bv = sum(u.battle_value for u in units if u.battle_value)
-                bv_str = f"  BV {total_bv:,}" if total_bv else ""
-                surface.blit(font_sm.render(fname + bv_str, True, fc), (x + 12, cy)); cy += 14
-                for u in units:
-                    row = pygame.Rect(x + 8, cy, width - 16, 18)
-                    moved = u.id in _moved
-                    bg = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
-                    pygame.draw.rect(surface, bg, row, border_radius=2)
-                    sub_s = f"({u.sub_position[0]},{u.sub_position[1]})" if u.sub_position else "(--)"
-                    mv_s  = "✓" if moved else " "
-                    st_s  = "!" if u.status == STATUS_CRIPPLED else " "
-                    lbl   = font_sm.render(f"{mv_s}{st_s}{u.name[:14]} {sub_s}", True,
-                                           TEXT_DIM if moved else TEXT)
-                    surface.blit(lbl, (row.x + 6, row.y + 3))
-                    boxes.append(Hitbox("unit", row, u.id))
-                    cy += 19
-            cy += 4
+        if _eng:
+            # ── ENGAGEMENT MODE ───────────────────────────────────────────
+            sp  = _eng["sub_pos"]
+            emv = _eng.get("turn_moved", set())
+            pygame.draw.line(surface, (200, 40, 40), (x + 6, cy), (x + width - 6, cy), 2); cy += 6
+            surface.blit(font_h.render("⚔ ENGAGEMENT", True, (255, 80, 80)), (x + 12, cy)); cy += 18
+            surface.blit(font_sm.render(f"Contact: sub({sp[0]},{sp[1]})", True, (255, 140, 140)),
+                         (x + 12, cy)); cy += 14
 
-        # Contact indicator: sub-hexes with opposing forces
-        contacts_at: dict = {}
-        for u in hex_units:
-            if u.sub_position:
-                contacts_at.setdefault(u.sub_position, set()).add(u.faction_id)
-        contested = [(sp, fids) for sp, fids in contacts_at.items() if len(fids) >= 2]
-        if contested:
-            pygame.draw.line(surface, (200, 50, 50), (x + 6, cy), (x + width - 6, cy), 1); cy += 4
-            surface.blit(font_sm.render("CONTACT!", True, (255, 80, 80)), (x + 12, cy)); cy += 13
-            for sp, fids in contested:
-                names = [campaign.factions[f].name[:8] if f in campaign.factions else f[:6]
-                         for f in fids]
-                surface.blit(font_sm.render(f"  sub{sp}: {' vs '.join(names)}", True, (255, 120, 120)),
-                             (x + 12, cy)); cy += 12
-            cy += 4
+            if not hex_units:
+                surface.blit(font_sm.render("(no units)", True, TEXT_DIM), (x + 12, cy)); cy += 14
+            else:
+                for fid, units in by_faction.items():
+                    f  = campaign.factions.get(fid)
+                    fc = f.color if f else (90, 90, 90)
+                    total_bv = sum(u.battle_value for u in units if u.battle_value)
+                    fname = (f.name[:14] if f else fid[:10]) + (f"  BV{total_bv:,}" if total_bv else "")
+                    surface.blit(font_sm.render(fname, True, fc), (x + 12, cy)); cy += 13
+                    for u in units:
+                        if u.sub_position is None:
+                            continue
+                        d    = hex_distance(Hex.from_tuple(sp), Hex.from_tuple(u.sub_position))
+                        role = "●CONTACT" if d == 0 else "→flank" if d == 1 else "⋯support"
+                        r_col = (255, 80, 80) if d == 0 else (255, 180, 60) if d == 1 else (140, 180, 200)
+                        moved = u.id in emv
+                        row = pygame.Rect(x + 8, cy, width - 16, 17)
+                        bg  = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
+                        pygame.draw.rect(surface, bg, row, border_radius=2)
+                        mv_s = "✓" if moved else " "
+                        st_s = "!" if u.status == STATUS_CRIPPLED else " "
+                        sub_s = f"({u.sub_position[0]},{u.sub_position[1]})"
+                        lbl  = font_sm.render(f"{mv_s}{st_s}{u.name[:12]} {sub_s}", True,
+                                              TEXT_DIM if moved else TEXT)
+                        surface.blit(lbl, (row.x + 4, row.y + 3))
+                        rl = font_sm.render(role, True, r_col)
+                        surface.blit(rl, (row.right - rl.get_width() - 4, row.y + 3))
+                        boxes.append(Hitbox("unit", row, u.id))
+                        cy += 18
+                cy += 4
+
+            # Action buttons
+            nxt_r = pygame.Rect(x + 8, cy, width - 16, 22)
+            nxt_bg = BTN_HOVER if nxt_r.collidepoint(hover_pos) else BTN_NORMAL
+            pygame.draw.rect(surface, nxt_bg, nxt_r, border_radius=3)
+            pygame.draw.rect(surface, BORDER_LT, nxt_r, 1, border_radius=3)
+            surface.blit(font_sm.render("↺ Next Pos. Turn", True, BTN_TEXT),
+                         (nxt_r.x + 8, nxt_r.y + 5))
+            boxes.append(Hitbox("engage_next_turn", nxt_r)); cy += 26
+
+            cmt_r = pygame.Rect(x + 8, cy, width - 16, 24)
+            cmt_bg = (60, 100, 60) if cmt_r.collidepoint(hover_pos) else (40, 70, 40)
+            pygame.draw.rect(surface, cmt_bg, cmt_r, border_radius=3)
+            pygame.draw.rect(surface, (80, 200, 80), cmt_r, 1, border_radius=3)
+            surface.blit(font_sm.render("⚔ Lock In & Play", True, (140, 255, 140)),
+                         (cmt_r.x + 8, cmt_r.y + 6))
+            boxes.append(Hitbox("engage_commit", cmt_r)); cy += 28
+
+        else:
+            # ── NORMAL OP UNITS panel ─────────────────────────────────────
+            pygame.draw.line(surface, (80, 80, 100), (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+            surface.blit(font_h.render("OP UNITS", True, TEXT_BRIGHT), (x + 12, cy)); cy += 18
+
+            if not hex_units:
+                surface.blit(font_sm.render("(no units in this hex)", True, TEXT_DIM), (x + 12, cy))
+                cy += 14
+            else:
+                for fid, units in by_faction.items():
+                    f  = campaign.factions.get(fid)
+                    fc = f.color if f else (90, 90, 90)
+                    total_bv = sum(u.battle_value for u in units if u.battle_value)
+                    bv_str = f"  BV {total_bv:,}" if total_bv else ""
+                    surface.blit(font_sm.render((f.name[:16] if f else fid[:12]) + bv_str, True, fc),
+                                 (x + 12, cy)); cy += 13
+                    for u in units:
+                        row   = pygame.Rect(x + 8, cy, width - 16, 17)
+                        moved = u.id in _moved
+                        bg    = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
+                        pygame.draw.rect(surface, bg, row, border_radius=2)
+                        sub_s = f"({u.sub_position[0]},{u.sub_position[1]})" if u.sub_position else "(--)"
+                        mv_s  = "✓" if moved else " "
+                        st_s  = "!" if u.status == STATUS_CRIPPLED else " "
+                        lbl   = font_sm.render(f"{mv_s}{st_s}{u.name[:14]} {sub_s}", True,
+                                               TEXT_DIM if moved else TEXT)
+                        surface.blit(lbl, (row.x + 4, row.y + 3))
+                        boxes.append(Hitbox("unit", row, u.id))
+                        cy += 18
+                cy += 4
+
+            # Sub-hex contact indicator
+            contacts_at: dict = {}
+            for u in hex_units:
+                if u.sub_position:
+                    contacts_at.setdefault(u.sub_position, set()).add(u.faction_id)
+            contested = [(sp, fids) for sp, fids in contacts_at.items() if len(fids) >= 2]
+            if contested:
+                pygame.draw.line(surface, (200, 50, 50), (x + 6, cy), (x + width - 6, cy), 1); cy += 4
+                surface.blit(font_sm.render("CONTACT!", True, (255, 80, 80)), (x + 12, cy)); cy += 13
+                for sp, fids in contested:
+                    names = [campaign.factions[f].name[:8] if f in campaign.factions else f[:6]
+                             for f in fids]
+                    surface.blit(font_sm.render(f"  sub{sp}: {' vs '.join(names)}", True, (255, 120, 120)),
+                                 (x + 12, cy)); cy += 12
+                cy += 4
 
     # ── Factions ─────────────────────────────────────────────────────────────
     surface.blit(font_h.render("FACTIONS", True, TEXT_BRIGHT), (x + 12, cy))

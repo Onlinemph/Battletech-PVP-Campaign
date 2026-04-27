@@ -143,6 +143,7 @@ class MapRenderer:
         supply_set:     Optional[Set[str]] = None,   # unit IDs that are supplied
         contact_hexes:  Optional[Dict[Tuple[int, int], list]] = None,
         highlight_color: Tuple[int, int, int] = (80, 160, 255),
+        engagement_hex: Optional[Tuple[int, int]] = None,
     ):
         self.surface         = surface
         self.rect            = rect
@@ -159,6 +160,7 @@ class MapRenderer:
         self.supply_set       = supply_set
         self.contact_hexes    = contact_hexes
         self.highlight_color  = highlight_color
+        self.engagement_hex   = engagement_hex
 
         self._font_sm = pygame.font.SysFont("monospace", max(9, int(hex_size * 0.55)), bold=True)
         self._font_co = pygame.font.SysFont("monospace", max(7, int(hex_size * 0.35)))
@@ -331,6 +333,15 @@ class MapRenderer:
                                      (int(cx_h) - r, int(cy_h)), (int(cx_h) + r, int(cy_h)), 2)
                     pygame.draw.line(self.surface, (255, 80, 80),
                                      (int(cx_h), int(cy_h) - r), (int(cx_h), int(cy_h) + r), 2)
+
+        # Engagement focal hex (operational scale): thick red border + inner ring
+        if self.engagement_hex and self.scale == SCALE_OPERATIONAL:
+            pulse = abs(pygame.time.get_ticks() % 1200 - 600) / 600  # 0→1→0
+            alpha = int(160 + 95 * pulse)
+            for h, _ in hexes:
+                if h.to_tuple() == self.engagement_hex:
+                    self._draw_hex_outline(h, (alpha, 30, 30), 5)
+                    self._draw_hex_outline(h, (255, min(255, 80 + int(120 * pulse)), 80), 2)
 
         # Draw hover / selection overlay
         if self.hover is not None and Hex.from_tuple(self.hover).to_tuple() in {h.to_tuple() for h, _ in hexes}:

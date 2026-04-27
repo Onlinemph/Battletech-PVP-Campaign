@@ -1127,6 +1127,89 @@ class LogEngagementDialog(Dialog):
         self.dd_attacker.draw_overlay(surface)
 
 
+# ── Scenario Summary dialog ───────────────────────────────────────────────────
+
+class ScenarioSummaryDialog(Dialog):
+    """Shows the final force positions before handing off to tabletop BattleTech."""
+    W, H = 580, 420
+
+    def __init__(self, screen_size: Tuple[int, int], sub_pos: tuple,
+                 op_hex: tuple, campaign, faction_ids: list):
+        super().__init__(f"Battle Scenario  —  sub-hex {sub_pos}", screen_size)
+        self._lines = self._build(sub_pos, op_hex, campaign, faction_ids)
+        by = self.rect.bottom - 52
+        self.btn_log   = Button(pygame.Rect(self.rect.x + 20, by, 160, 34), "Log Result...", self.font)
+        self.btn_close = Button(pygame.Rect(self.rect.right - 130, by, 110, 34), "Close",
+                                self.font, danger=True)
+
+    @staticmethod
+    def _build(sub_pos: tuple, op_hex: tuple, campaign, faction_ids: list) -> list:
+        from game.hex_grid import Hex, hex_distance
+        from game.constants import STATUS_DESTROYED, STATUS_RETREATED
+        from game.campaign import get_operational_map
+        from game.terrain import terrain_name
+
+        op_map = get_operational_map(campaign, op_hex)
+        terrain = terrain_name(op_map.get(sub_pos, "plains"))
+
+        lines = [
+            f"  Location : sub-hex {sub_pos} in strategic hex {op_hex}",
+            f"  Terrain  : {terrain}",
+            "",
+        ]
+        for fid in faction_ids:
+            f = campaign.factions.get(fid)
+            fname = f.name if f else fid
+            units = [u for u in campaign.units.values()
+                     if u.faction_id == fid and u.position == op_hex
+                     and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
+            if not units:
+                continue
+            lines.append(f"  [{fname}]")
+            for u in units:
+                if u.sub_position is None:
+                    role = "off-map"
+                else:
+                    d = hex_distance(Hex.from_tuple(sub_pos), Hex.from_tuple(u.sub_position))
+                    role = "IN CONTACT" if d == 0 else "flanking" if d == 1 else "support"
+                bv = f"BV {u.battle_value:,}" if u.battle_value else "BV ?"
+                pos = f"sub{u.sub_position}" if u.sub_position else "(--)"
+                lines.append(f"    {u.name[:20]:20s}  {pos}  {role}  [{bv}]")
+            lines.append("")
+        lines += [
+            "  Set up the tabletop with attacking forces entering",
+            "  from the edge nearest their sub-hex position.",
+        ]
+        return lines
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        self.btn_log.handle_event(event)
+        self.btn_close.handle_event(event)
+        if self.btn_log.clicked:
+            self.result = {"action": "log"}
+            self.done   = True
+        if self.btn_close.clicked:
+            self.result = {"action": "close"}
+            self.done   = True
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        fy  = self.rect.y + 52
+        fs  = pygame.font.SysFont("monospace", 12)
+        fh  = pygame.font.SysFont("monospace", 13, bold=True)
+        surface.blit(fh.render("FORCE POSITIONS", True, (255, 200, 80)), (self.rect.x + 20, fy))
+        fy += 22
+        for line in self._lines:
+            col = (255, 180, 60) if line.strip().startswith("[") else \
+                  (255, 80,  80) if "IN CONTACT" in line else \
+                  (140, 200, 255) if line.strip().startswith("Set up") else \
+                  (180, 200, 180)
+            surface.blit(fs.render(line, True, col), (self.rect.x + 10, fy))
+            fy += 15
+        self.btn_log.draw(surface)
+        self.btn_close.draw(surface)
+
+
 # ── Operational Engagement dialog ─────────────────────────────────────────────
 
 class OperationalEngagementDialog(Dialog):

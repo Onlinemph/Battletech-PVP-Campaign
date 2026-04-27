@@ -41,7 +41,7 @@ from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          AdjustFundsDialog, AddStructureDialog, HexNoteDialog,
                          AddGroupDialog, LogEngagementDialog,
                          AddObjectiveDialog, ResolveObjectiveDialog,
-                         OperationalEngagementDialog)
+                         OperationalEngagementDialog, ScenarioSummaryDialog)
 from ui.export import export_view
 
 
@@ -89,6 +89,7 @@ class App:
 
         # Operational minigame state
         self.op_turn_moved: set = set()   # unit IDs that moved this op-turn
+        self.op_engagement: Optional[dict] = None  # {"sub_pos", "factions", "turn_moved"}
 
         # Right-click context menu
         self._ctx_menu: Optional[dict] = None   # {pos, hex_pos, items: [(label,fn)]}
@@ -421,8 +422,12 @@ class App:
                         af_id  = list(self.campaign.factions.keys())[af_idx] if self.campaign.factions else None
                         af_units = [u for u in op_units if u.faction_id == af_id] if af_id else []
                         chosen = (af_units or op_units)[0]
-                        if chosen.id in self.op_turn_moved and not self.gm_force_move:
-                            self._toast_msg(f"{chosen.name} already moved this op-turn")
+                        # Check move limit: engagement uses its own tracker, else op_turn_moved
+                        moved_set = (self.op_engagement["turn_moved"]
+                                     if self.op_engagement else self.op_turn_moved)
+                        if chosen.id in moved_set and not self.gm_force_move:
+                            ctx = "positioning turn" if self.op_engagement else "op-turn"
+                            self._toast_msg(f"{chosen.name} already moved this {ctx}")
                             return
                         self.move_source_unit = chosen.id
                         self.selected_unit_id = chosen.id
@@ -433,7 +438,10 @@ class App:
                         dest_sub = sub.to_tuple() if sub is not None else coord
                         u.sub_position = dest_sub
                         if not self.gm_force_move:
-                            self.op_turn_moved.add(u.id)
+                            if self.op_engagement:
+                                self.op_engagement["turn_moved"].add(u.id)
+                            else:
+                                self.op_turn_moved.add(u.id)
                         self._toast_msg(f"Moved {u.name} to sub {dest_sub}")
                         log_event(self.campaign, "unit_moved",
                                   f"{u.name} op-move to sub({dest_sub[0]},{dest_sub[1]})")
@@ -517,19 +525,28 @@ class App:
         self.selected_hex = coord
 
     def _check_op_contact(self, sub_pos: tuple) -> None:
-        """Open engagement dialog if opposing factions share sub_pos in current op_hex."""
+        """Enter engagement mode when opposing factions share sub_pos."""
         if not self.op_hex or not self.campaign:
             return
+        if self.op_engagement and self.op_engagement.get("sub_pos") == sub_pos:
+            return  # already tracking this contact
         by_faction: dict = {}
         for uid, u in self.campaign.units.items():
             if (u.position == self.op_hex and u.sub_position == sub_pos
                     and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)):
                 by_faction.setdefault(u.faction_id, []).append(u)
         if len(by_faction) >= 2:
-            self.dialog = OperationalEngagementDialog(
-                (self.width, self.height), sub_pos,
-                self.campaign.factions, by_faction,
-            )
+            fac_ids = list(by_faction.keys())
+            self.op_engagement = {
+                "sub_pos":    sub_pos,
+                "factions":   fac_ids,
+                "turn_moved": set(),
+            }
+            names = [self.campaign.factions[f].name if f in self.campaign.factions else f
+                     for f in fac_ids[:2]]
+            self._toast_msg(f"Contact! {' vs '.join(names)} — position your forces")
+            log_event(self.campaign, "op_contact",
+                      f"Engagement: {' vs '.join(names)} at sub{sub_pos}")
 
     def _current_terrain_map(self) -> dict:
         if self.scale == SCALE_OPERATIONAL and self.op_hex is not None:
@@ -667,6 +684,19 @@ class App:
             if self.scale == SCALE_STRATEGIC:
                 self._enter_operational(pos)
                 self._toast_msg(f"Contact! Drilling into hex ({pos[0]},{pos[1]})")
+        elif box.name == "engage_next_turn":
+            if self.op_engagement:
+                self.op_engagement["turn_moved"] = set()
+                self._toast_msg("Positioning turn reset — maneuver again")
+        elif box.name == "engage_commit":
+            if self.op_engagement:
+                self.dialog = ScenarioSummaryDialog(
+                    (self.width, self.height),
+                    self.op_engagement["sub_pos"],
+                    self.op_hex,
+                    self.campaign,
+                    self.op_engagement["factions"],
+                )
         elif box.name == "reset_all_moves":
             for u in self.campaign.units.values():
                 u.has_moved = False
@@ -798,6 +828,18 @@ class App:
             log_combat(self.campaign, r["position"], r["attacker_fid"], r["defender_fid"],
                        r["outcome"], r["casualties"], r["notes"])
             self._toast_msg(f"Combat logged: {r['outcome']}")
+            if getattr(d, "_from_engagement", False):
+                self.op_engagement = None
+
+        elif isinstance(d, ScenarioSummaryDialog):
+            if d.result and d.result.get("action") == "log":
+                pos = self.op_engagement["sub_pos"] if self.op_engagement else self.op_hex or (0, 0)
+                dlg = LogEngagementDialog(
+                    (self.width, self.height), pos, self.campaign.factions)
+                dlg._from_engagement = True  # type: ignore[attr-defined]
+                self.dialog = dlg
+            else:
+                self.op_engagement = None
 
         elif isinstance(d, AddObjectiveDialog):
             r = d.result
@@ -966,6 +1008,9 @@ class App:
                         )
                     elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
                         op_range = walk_mp_to_op_range(eff_walk)
+                        if self.op_engagement:
+                            op_range = max(1, op_range // 2)   # tighter range during engagement
+                            highlight_color = (255, 160, 60)   # amber = tactical positioning
                         highlight_hexes = operational_reachable(
                             self.campaign, self.op_hex, u.sub_position,
                             op_range, u.unit_type
@@ -995,6 +1040,8 @@ class App:
         contact_hexes = (get_contact_hexes(self.campaign)
                          if self.scale == SCALE_STRATEGIC else None)
 
+        engagement_sub = self.op_engagement["sub_pos"] if self.op_engagement else None
+
         renderer = MapRenderer(
             surface         = self.screen,
             rect            = rect,
@@ -1010,6 +1057,7 @@ class App:
             highlight_color  = highlight_color,
             supply_set       = supply_set,
             contact_hexes    = contact_hexes,
+            engagement_hex   = engagement_sub,
         )
         renderer.draw()
 
@@ -1027,6 +1075,7 @@ class App:
             self.campaign, self.selected_hex, self.selected_unit_id,
             self.faction_filter, mouse_pos, self.scale, self.op_hex,
             op_turn_moved=self.op_turn_moved,
+            op_engagement=self.op_engagement,
         )
 
         # Statusbar
