@@ -247,61 +247,61 @@ def draw_sidebar(
             by_faction.setdefault(u.faction_id, []).append(u)
 
         if _eng:
-            # ── ENGAGEMENT MODE ───────────────────────────────────────────
-            sp  = _eng["sub_pos"]
-            emv = _eng.get("turn_moved", set())
+            # ── ENGAGEMENT MODE — one section per active contact ──────────
+            n_eng = len(_eng)
             pygame.draw.line(surface, (200, 40, 40), (x + 6, cy), (x + width - 6, cy), 2); cy += 6
-            surface.blit(font_h.render("⚔ ENGAGEMENT", True, (255, 80, 80)), (x + 12, cy)); cy += 18
-            surface.blit(font_sm.render(f"Contact: sub({sp[0]},{sp[1]})", True, (255, 140, 140)),
-                         (x + 12, cy)); cy += 14
+            hdr = f"⚔ ENGAGEMENT{'S' if n_eng > 1 else ''}  ({n_eng})"
+            surface.blit(font_h.render(hdr, True, (255, 80, 80)), (x + 12, cy)); cy += 18
 
-            if not hex_units:
-                surface.blit(font_sm.render("(no units)", True, TEXT_DIM), (x + 12, cy)); cy += 14
-            else:
+            for sp, eng in _eng.items():
+                emv = eng.get("turn_moved", set())
+                # Sub-header for this contact point
+                sp_lbl = font_sm.render(f"sub({sp[0]},{sp[1]})", True, (255, 160, 80))
+                surface.blit(sp_lbl, (x + 12, cy)); cy += 13
+
+                # Units relative to this contact hex
                 for fid, units in by_faction.items():
                     f  = campaign.factions.get(fid)
                     fc = f.color if f else (90, 90, 90)
                     total_bv = sum(u.battle_value for u in units if u.battle_value)
-                    fname = (f.name[:14] if f else fid[:10]) + (f"  BV{total_bv:,}" if total_bv else "")
-                    surface.blit(font_sm.render(fname, True, fc), (x + 12, cy)); cy += 13
+                    fname = (f.name[:12] if f else fid[:8]) + (f" BV{total_bv:,}" if total_bv else "")
+                    surface.blit(font_sm.render(fname, True, fc), (x + 14, cy)); cy += 12
                     for u in units:
                         if u.sub_position is None:
                             continue
-                        d    = hex_distance(Hex.from_tuple(sp), Hex.from_tuple(u.sub_position))
-                        role = "●CONTACT" if d == 0 else "→flank" if d == 1 else "⋯support"
+                        d     = hex_distance(Hex.from_tuple(sp), Hex.from_tuple(u.sub_position))
+                        role  = "●" if d == 0 else "→" if d == 1 else "⋯"
                         r_col = (255, 80, 80) if d == 0 else (255, 180, 60) if d == 1 else (140, 180, 200)
                         moved = u.id in emv
-                        row = pygame.Rect(x + 8, cy, width - 16, 17)
-                        bg  = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
+                        row   = pygame.Rect(x + 8, cy, width - 16, 16)
+                        bg    = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
                         pygame.draw.rect(surface, bg, row, border_radius=2)
-                        mv_s = "✓" if moved else " "
-                        st_s = "!" if u.status == STATUS_CRIPPLED else " "
+                        mv_s  = "✓" if moved else " "
+                        st_s  = "!" if u.status == STATUS_CRIPPLED else " "
                         sub_s = f"({u.sub_position[0]},{u.sub_position[1]})"
-                        lbl  = font_sm.render(f"{mv_s}{st_s}{u.name[:12]} {sub_s}", True,
-                                              TEXT_DIM if moved else TEXT)
-                        surface.blit(lbl, (row.x + 4, row.y + 3))
+                        lbl   = font_sm.render(f"{mv_s}{st_s}{u.name[:11]} {sub_s}", True,
+                                               TEXT_DIM if moved else TEXT)
+                        surface.blit(lbl, (row.x + 4, row.y + 2))
                         rl = font_sm.render(role, True, r_col)
-                        surface.blit(rl, (row.right - rl.get_width() - 4, row.y + 3))
+                        surface.blit(rl, (row.right - rl.get_width() - 4, row.y + 2))
                         boxes.append(Hitbox("unit", row, u.id))
-                        cy += 18
-                cy += 4
+                        cy += 17
 
-            # Action buttons
-            nxt_r = pygame.Rect(x + 8, cy, width - 16, 22)
-            nxt_bg = BTN_HOVER if nxt_r.collidepoint(hover_pos) else BTN_NORMAL
-            pygame.draw.rect(surface, nxt_bg, nxt_r, border_radius=3)
-            pygame.draw.rect(surface, BORDER_LT, nxt_r, 1, border_radius=3)
-            surface.blit(font_sm.render("↺ Next Pos. Turn", True, BTN_TEXT),
-                         (nxt_r.x + 8, nxt_r.y + 5))
-            boxes.append(Hitbox("engage_next_turn", nxt_r)); cy += 26
-
-            cmt_r = pygame.Rect(x + 8, cy, width - 16, 24)
-            cmt_bg = (60, 100, 60) if cmt_r.collidepoint(hover_pos) else (40, 70, 40)
-            pygame.draw.rect(surface, cmt_bg, cmt_r, border_radius=3)
-            pygame.draw.rect(surface, (80, 200, 80), cmt_r, 1, border_radius=3)
-            surface.blit(font_sm.render("⚔ Lock In & Play", True, (140, 255, 140)),
-                         (cmt_r.x + 8, cmt_r.y + 6))
-            boxes.append(Hitbox("engage_commit", cmt_r)); cy += 28
+                # Per-engagement action buttons (carry sp as data)
+                btn_w = (width - 20) // 2
+                nxt_r = pygame.Rect(x + 8,          cy, btn_w - 2, 20)
+                cmt_r = pygame.Rect(x + 8 + btn_w,  cy, btn_w - 2, 20)
+                nxt_bg = BTN_HOVER if nxt_r.collidepoint(hover_pos) else BTN_NORMAL
+                cmt_bg = (50, 90, 50) if cmt_r.collidepoint(hover_pos) else (35, 65, 35)
+                pygame.draw.rect(surface, nxt_bg, nxt_r, border_radius=3)
+                pygame.draw.rect(surface, BORDER_LT, nxt_r, 1, border_radius=3)
+                pygame.draw.rect(surface, cmt_bg, cmt_r, border_radius=3)
+                pygame.draw.rect(surface, (80, 180, 80), cmt_r, 1, border_radius=3)
+                surface.blit(font_sm.render("↺ Pos.Turn", True, BTN_TEXT), (nxt_r.x + 4, nxt_r.y + 4))
+                surface.blit(font_sm.render("⚔ Lock In", True, (140, 235, 140)), (cmt_r.x + 4, cmt_r.y + 4))
+                boxes.append(Hitbox("engage_next_turn", nxt_r, sp))
+                boxes.append(Hitbox("engage_commit",    cmt_r, sp))
+                cy += 24
 
         else:
             # ── NORMAL OP UNITS panel ─────────────────────────────────────
