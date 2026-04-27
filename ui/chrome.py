@@ -9,7 +9,8 @@ from game.constants import (SCALE_STRATEGIC, SCALE_OPERATIONAL,
                              HIGH_ALT_HEX_SIZE_M, LOW_ALT_HEX_SIZE_M,
                              PHASE_COLOR, PHASE_ABBR, PHASE_MORNING,
                              OP_TURNS_PER_PHASE,
-                             STATUS_DESTROYED, STATUS_RETREATED, STATUS_INORBIT)
+                             STATUS_DESTROYED, STATUS_RETREATED, STATUS_INORBIT,
+                             STATUS_CRIPPLED, ELEVATION_VISION_DIV)
 from game.hex_grid import axial_to_offset
 from game.models import Campaign, Faction, Unit
 from game.terrain import terrain_name
@@ -192,6 +193,7 @@ def draw_sidebar(
     hover_pos:    Tuple[int, int],
     scale:        str,
     op_hex:       Optional[Tuple[int, int]],
+    op_turn_moved: Optional[set] = None,
 ) -> List[Hitbox]:
     """Right sidebar with factions, selected hex info, unit info."""
     rect = pygame.Rect(x, y, width, height)
@@ -229,6 +231,62 @@ def draw_sidebar(
                      (rst_all_r.x + 8, rst_all_r.y + 3))
         boxes.append(Hitbox("reset_all_moves", rst_all_r))
         cy += 22
+
+    # ── Operational Battle panel ──────────────────────────────────────────────
+    if scale == SCALE_OPERATIONAL and op_hex is not None:
+        _moved = op_turn_moved or set()
+        pygame.draw.line(surface, (180, 60, 60), (x + 6, cy), (x + width - 6, cy), 1); cy += 6
+        surface.blit(font_h.render("OP BATTLE", True, (255, 100, 100)), (x + 12, cy)); cy += 18
+
+        hex_units = [u for u in campaign.units.values()
+                     if u.position == op_hex
+                     and u.status not in (STATUS_DESTROYED,)]
+
+        by_faction: dict = {}
+        for u in hex_units:
+            by_faction.setdefault(u.faction_id, []).append(u)
+
+        if not hex_units:
+            surface.blit(font_sm.render("(no units in this hex)", True, TEXT_DIM), (x + 12, cy))
+            cy += 14
+        else:
+            for fid, units in by_faction.items():
+                f = campaign.factions.get(fid)
+                fc = f.color if f else (90, 90, 90)
+                fname = f.name[:18] if f else fid[:12]
+                total_bv = sum(u.battle_value for u in units if u.battle_value)
+                bv_str = f"  BV {total_bv:,}" if total_bv else ""
+                surface.blit(font_sm.render(fname + bv_str, True, fc), (x + 12, cy)); cy += 14
+                for u in units:
+                    row = pygame.Rect(x + 8, cy, width - 16, 18)
+                    moved = u.id in _moved
+                    bg = (24, 24, 30) if moved else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
+                    pygame.draw.rect(surface, bg, row, border_radius=2)
+                    sub_s = f"({u.sub_position[0]},{u.sub_position[1]})" if u.sub_position else "(--)"
+                    mv_s  = "✓" if moved else " "
+                    st_s  = "!" if u.status == STATUS_CRIPPLED else " "
+                    lbl   = font_sm.render(f"{mv_s}{st_s}{u.name[:14]} {sub_s}", True,
+                                           TEXT_DIM if moved else TEXT)
+                    surface.blit(lbl, (row.x + 6, row.y + 3))
+                    boxes.append(Hitbox("unit", row, u.id))
+                    cy += 19
+            cy += 4
+
+        # Contact indicator: sub-hexes with opposing forces
+        contacts_at: dict = {}
+        for u in hex_units:
+            if u.sub_position:
+                contacts_at.setdefault(u.sub_position, set()).add(u.faction_id)
+        contested = [(sp, fids) for sp, fids in contacts_at.items() if len(fids) >= 2]
+        if contested:
+            pygame.draw.line(surface, (200, 50, 50), (x + 6, cy), (x + width - 6, cy), 1); cy += 4
+            surface.blit(font_sm.render("CONTACT!", True, (255, 80, 80)), (x + 12, cy)); cy += 13
+            for sp, fids in contested:
+                names = [campaign.factions[f].name[:8] if f in campaign.factions else f[:6]
+                         for f in fids]
+                surface.blit(font_sm.render(f"  sub{sp}: {' vs '.join(names)}", True, (255, 120, 120)),
+                             (x + 12, cy)); cy += 12
+            cy += 4
 
     # ── Factions ─────────────────────────────────────────────────────────────
     surface.blit(font_h.render("FACTIONS", True, TEXT_BRIGHT), (x + 12, cy))

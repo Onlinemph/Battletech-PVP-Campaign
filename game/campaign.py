@@ -72,6 +72,53 @@ def strategic_reachable(campaign, position: tuple, walk_mp: int,
                 heapq.heappush(heap, (new_cost, nb_t))
     return reachable
 
+
+def operational_reachable(
+    campaign,
+    op_hex: tuple,
+    sub_pos: tuple,
+    move_range: int,
+    unit_type: str = UNIT_MECH,
+) -> set:
+    """Dijkstra flood-fill of reachable op-scale sub-hexes within move_range.
+    Uses OP_TERRAIN_COST; hexes beyond OPERATIONAL_RADIUS from origin are excluded.
+    Aerospace ignore terrain and move freely within range."""
+    from game.hex_grid import Hex, hex_range, hex_neighbors, hex_distance
+
+    if unit_type in (UNIT_AEROSPACE, UNIT_DROPSHIP):
+        center = Hex.from_tuple(sub_pos)
+        origin = Hex(0, 0)
+        return {h.to_tuple() for h in hex_range(center, move_range)
+                if hex_distance(origin, h) <= OPERATIONAL_RADIUS}
+
+    op_map = get_operational_map(campaign, op_hex)
+    origin = Hex(0, 0)
+
+    dist = {sub_pos: 0.0}
+    heap = [(0.0, sub_pos)]
+    reachable = {sub_pos}
+
+    while heap:
+        cost, pos = heapq.heappop(heap)
+        if cost > dist.get(pos, float("inf")) + 1e-9:
+            continue
+        for nb in hex_neighbors(Hex.from_tuple(pos)):
+            nb_t = nb.to_tuple()
+            if hex_distance(origin, nb) > OPERATIONAL_RADIUS:
+                continue
+            terrain    = op_map.get(nb_t, TERRAIN_PLAINS)
+            entry_cost = OP_TERRAIN_COST.get(terrain)
+            if entry_cost is None:
+                continue
+            new_cost = cost + entry_cost
+            if new_cost <= move_range + 1e-9 and new_cost < dist.get(nb_t, float("inf")) - 1e-9:
+                dist[nb_t]  = new_cost
+                reachable.add(nb_t)
+                heapq.heappush(heap, (new_cost, nb_t))
+
+    return reachable
+
+
 SAVES_DIR = Path(__file__).parent.parent / "saves"
 
 

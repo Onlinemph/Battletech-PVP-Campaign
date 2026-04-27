@@ -27,7 +27,8 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
                             next_op_turn, get_operational_map, log_event, add_structure,
                             add_group, add_objective, log_combat,
                             walk_mp_to_strategic, walk_mp_to_op_range,
-                            strategic_reachable, compute_daily_income)
+                            strategic_reachable, operational_reachable,
+                            compute_daily_income)
 from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
@@ -39,7 +40,8 @@ from ui.dialogs import (NewCampaignDialog, AddFactionDialog, AddUnitDialog,
                          ExportDialog, ConfirmDialog, ResolveMissionDialog,
                          AdjustFundsDialog, AddStructureDialog, HexNoteDialog,
                          AddGroupDialog, LogEngagementDialog,
-                         AddObjectiveDialog, ResolveObjectiveDialog)
+                         AddObjectiveDialog, ResolveObjectiveDialog,
+                         OperationalEngagementDialog)
 from ui.export import export_view
 
 
@@ -84,6 +86,9 @@ class App:
         self.paint_terrain   = "plains"
         self.paint_elevation = 5
         self._paint_dragging = False
+
+        # Operational minigame state
+        self.op_turn_moved: set = set()   # unit IDs that moved this op-turn
 
         # Right-click context menu
         self._ctx_menu: Optional[dict] = None   # {pos, hex_pos, items: [(label,fn)]}
@@ -404,24 +409,38 @@ class App:
                 # Operational move: pick unit by sub_position, then set destination sub_position
                 if self.move_source_unit is None:
                     op_units = [u for u in self.campaign.units.values()
-                                if u.position == self.op_hex and u.sub_position == coord]
+                                if u.position == self.op_hex and u.sub_position == coord
+                                and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
                     if not op_units:
-                        # coord here is the sub-hex axial from pixel_to_hierarchical's sub result
                         op_units = [u for u in self.campaign.units.values()
-                                    if u.position == self.op_hex]
+                                    if u.position == self.op_hex
+                                    and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
                     if op_units:
-                        self.move_source_unit = op_units[0].id
-                        self.selected_unit_id = op_units[0].id
-                        self._toast_msg(f"Op-move {op_units[0].name}: click destination")
+                        # Filter to active faction if possible
+                        af_idx = self.campaign.active_faction_idx % max(1, len(self.campaign.factions))
+                        af_id  = list(self.campaign.factions.keys())[af_idx] if self.campaign.factions else None
+                        af_units = [u for u in op_units if u.faction_id == af_id] if af_id else []
+                        chosen = (af_units or op_units)[0]
+                        if chosen.id in self.op_turn_moved and not self.gm_force_move:
+                            self._toast_msg(f"{chosen.name} already moved this op-turn")
+                            return
+                        self.move_source_unit = chosen.id
+                        self.selected_unit_id = chosen.id
+                        self._toast_msg(f"Op-move {chosen.name}: click destination")
                 else:
                     u = self.campaign.units.get(self.move_source_unit)
                     if u is not None:
                         dest_sub = sub.to_tuple() if sub is not None else coord
                         u.sub_position = dest_sub
+                        if not self.gm_force_move:
+                            self.op_turn_moved.add(u.id)
                         self._toast_msg(f"Moved {u.name} to sub {dest_sub}")
                         log_event(self.campaign, "unit_moved",
                                   f"{u.name} op-move to sub({dest_sub[0]},{dest_sub[1]})")
+                        # Check for contact at destination
+                        self._check_op_contact(dest_sub)
                     self.move_source_unit = None
+                    self.gm_force_move    = False
             else:
                 if self.move_source_unit is None:
                     hex_units = [u for u in self.campaign.units.values() if u.position == coord]
@@ -497,6 +516,21 @@ class App:
 
         self.selected_hex = coord
 
+    def _check_op_contact(self, sub_pos: tuple) -> None:
+        """Open engagement dialog if opposing factions share sub_pos in current op_hex."""
+        if not self.op_hex or not self.campaign:
+            return
+        by_faction: dict = {}
+        for uid, u in self.campaign.units.items():
+            if (u.position == self.op_hex and u.sub_position == sub_pos
+                    and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)):
+                by_faction.setdefault(u.faction_id, []).append(u)
+        if len(by_faction) >= 2:
+            self.dialog = OperationalEngagementDialog(
+                (self.width, self.height), sub_pos,
+                self.campaign.factions, by_faction,
+            )
+
     def _current_terrain_map(self) -> dict:
         if self.scale == SCALE_OPERATIONAL and self.op_hex is not None:
             return get_operational_map(self.campaign, self.op_hex)
@@ -531,6 +565,11 @@ class App:
                     day, phase, op_t = next_op_turn(self.campaign)
                     abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
                     self._toast_msg(f"Hour {op_t+1}/{OP_TURNS_PER_PHASE} — Day {day} {abbr}")
+                    self.op_turn_moved.clear()
+                    # Advance active faction so the other side moves next op-turn
+                    if self.campaign.factions:
+                        n = len(self.campaign.factions)
+                        self.campaign.active_faction_idx = (self.campaign.active_faction_idx + 1) % n
                 else:
                     day, phase = next_phase(self.campaign)
                     abbr = {"morning": "AM", "afternoon": "PM", "night": "**"}.get(phase, phase)
@@ -812,6 +851,44 @@ class App:
                 log_event(self.campaign, "structure_deleted", f"Structure deleted: {s.name}")
                 self._toast_msg(f"Deleted: {s.name}")
 
+        elif isinstance(d, OperationalEngagementDialog):
+            r = d.result
+            if r is None:
+                return
+            if r["action"] == "fight_manually":
+                # Re-open the manual log dialog so the GM can record the result
+                self.dialog = LogEngagementDialog(
+                    (self.width, self.height),
+                    r.get("sub_pos", self.op_hex or (0, 0)),
+                    self.campaign.factions,
+                )
+                return
+            # Auto-resolved: apply casualties
+            destroyed, retreated, crippled = [], [], []
+            for uid, new_status in r.get("casualties", []):
+                u = self.campaign.units.get(uid)
+                if u:
+                    u.status = new_status
+                    if new_status == STATUS_RETREATED:
+                        retreated.append(u.name)
+                    elif new_status == STATUS_DESTROYED:
+                        destroyed.append(u.name)
+                    else:
+                        crippled.append(u.name)
+            log_combat(
+                self.campaign,
+                self.op_hex or (0, 0),
+                r["fac_a_id"], r["fac_b_id"],
+                r["outcome"],
+                r.get("casualty_text", ""),
+                "",
+            )
+            parts = []
+            if destroyed: parts.append(f"Destroyed: {', '.join(destroyed)}")
+            if retreated: parts.append(f"Retreated: {', '.join(retreated)}")
+            if crippled:  parts.append(f"Crippled: {', '.join(crippled)}")
+            self._toast_msg(f"Engagement resolved — {'; '.join(parts) if parts else 'No casualties'}")
+
     # ── drawing ──────────────────────────────────────────────────────────────
 
     def _draw(self) -> None:
@@ -889,8 +966,10 @@ class App:
                         )
                     elif self.scale == SCALE_OPERATIONAL and u.sub_position is not None:
                         op_range = walk_mp_to_op_range(eff_walk)
-                        center = Hex.from_tuple(u.sub_position)
-                        highlight_hexes = {h.to_tuple() for h in hex_range(center, op_range)}
+                        highlight_hexes = operational_reachable(
+                            self.campaign, self.op_hex, u.sub_position,
+                            op_range, u.unit_type
+                        )
 
         # Vision highlight: selected unit in select tool shows its LOS in green
         if (highlight_hexes is None
@@ -947,6 +1026,7 @@ class App:
             SIDEBAR_W, self.height - TOOLBAR_H - STATUSBAR_H,
             self.campaign, self.selected_hex, self.selected_unit_id,
             self.faction_filter, mouse_pos, self.scale, self.op_hex,
+            op_turn_moved=self.op_turn_moved,
         )
 
         # Statusbar

@@ -1127,6 +1127,214 @@ class LogEngagementDialog(Dialog):
         self.dd_attacker.draw_overlay(surface)
 
 
+# ── Operational Engagement dialog ─────────────────────────────────────────────
+
+class OperationalEngagementDialog(Dialog):
+    """Fires when two factions occupy the same op-scale sub-hex.
+    Offers auto-resolve (BV-weighted 2d6) or manual logging."""
+    W, H = 620, 460
+
+    def __init__(self, screen_size: Tuple[int, int], sub_pos: tuple,
+                 factions: Dict[str, "Faction"],
+                 units_by_faction: Dict[str, list]):
+        super().__init__(f"!! CONTACT !! Sub-hex {sub_pos}", screen_size)
+        self._sub_pos = sub_pos
+        self._factions = factions
+        # Expect exactly two factions (may be more; take first two)
+        fac_ids = list(units_by_faction.keys())
+        self._fac_a_id   = fac_ids[0]
+        self._fac_b_id   = fac_ids[1] if len(fac_ids) > 1 else fac_ids[0]
+        self._fac_a_units = units_by_faction[self._fac_a_id]
+        self._fac_b_units = units_by_faction.get(self._fac_b_id, [])
+        self._fac_a_name  = factions[self._fac_a_id].name if self._fac_a_id in factions else self._fac_a_id
+        self._fac_b_name  = factions[self._fac_b_id].name if self._fac_b_id in factions else self._fac_b_id
+        self._fac_a_color = factions[self._fac_a_id].color if self._fac_a_id in factions else (180,180,180)
+        self._fac_b_color = factions[self._fac_b_id].color if self._fac_b_id in factions else (180,180,180)
+
+        self._resolved    = False
+        self._result_lines: List[str] = []
+        self._casualties: List[Tuple[str, str]] = []
+        self._winner_fid: Optional[str] = None
+        self._outcome_str = ""
+
+        bx, by = self.rect.x + 20, self.rect.bottom - 52
+        self.btn_auto    = Button(pygame.Rect(bx,       by, 130, 34), "Auto-Resolve", self.font)
+        self.btn_manual  = Button(pygame.Rect(bx + 138, by, 130, 34), "Table Fight",  self.font)
+        self.btn_apply   = Button(pygame.Rect(bx,       by, 130, 34), "Apply Result", self.font)
+        self.btn_cancel  = Button(pygame.Rect(bx + 138, by, 110, 34), "Cancel",       self.font, danger=True)
+
+    # ── resolution ──────────────────────────────────────────────────────────
+
+    def _auto_resolve(self) -> None:
+        import random
+        from game.constants import (STATUS_DESTROYED, STATUS_RETREATED, STATUS_CRIPPLED,
+                                    OUTCOME_ATTACKER_WIN, OUTCOME_DEFENDER_WIN, OUTCOME_DRAW)
+
+        def _bv(units):
+            return sum(u.battle_value if u.battle_value else 800 for u in units)
+
+        a_bv = _bv(self._fac_a_units)
+        b_bv = _bv(self._fac_b_units)
+        total = max(1, a_bv + b_bv)
+        a_ratio = a_bv / total
+
+        a_roll  = random.randint(1, 6) + random.randint(1, 6)
+        b_roll  = random.randint(1, 6) + random.randint(1, 6)
+        bv_mod  = round((a_ratio - 0.5) * 4)
+        a_score = a_roll + bv_mod
+        b_score = b_roll - bv_mod
+
+        if a_score > b_score:
+            winner_name = self._fac_a_name
+            self._winner_fid = self._fac_a_id
+            loser_units  = self._fac_b_units
+            winner_units = self._fac_a_units
+            outcome = OUTCOME_ATTACKER_WIN
+        elif b_score > a_score:
+            winner_name = self._fac_b_name
+            self._winner_fid = self._fac_b_id
+            loser_units  = self._fac_a_units
+            winner_units = self._fac_b_units
+            outcome = OUTCOME_DEFENDER_WIN
+        else:
+            winner_name = "Draw"
+            self._winner_fid = None
+            loser_units  = self._fac_a_units + self._fac_b_units
+            winner_units = []
+            outcome = OUTCOME_DRAW
+
+        self._outcome_str = outcome
+        lines = [
+            f"  {winner_name} wins  (A={a_score} vs B={b_score})",
+            f"  BV — {self._fac_a_name}: {a_bv:,}  vs  {self._fac_b_name}: {b_bv:,}",
+            "",
+        ]
+        casualties = []
+        for u in loser_units:
+            roll = random.randint(2, 12)
+            if roll <= 4:
+                casualties.append((u.id, STATUS_DESTROYED))
+                lines.append(f"  X {u.name[:18]:18s} -> DESTROYED (roll {roll})")
+            elif roll <= 7:
+                casualties.append((u.id, STATUS_RETREATED))
+                lines.append(f"  < {u.name[:18]:18s} -> RETREATED (roll {roll})")
+            else:
+                casualties.append((u.id, STATUS_CRIPPLED))
+                lines.append(f"  ! {u.name[:18]:18s} -> CRIPPLED  (roll {roll})")
+        for u in winner_units:
+            roll = random.randint(2, 12)
+            if roll <= 3:
+                casualties.append((u.id, STATUS_CRIPPLED))
+                lines.append(f"  ! {u.name[:18]:18s} -> CRIPPLED  (winner dmg, roll {roll})")
+            else:
+                lines.append(f"  . {u.name[:18]:18s} -> OK")
+
+        self._result_lines = lines
+        self._casualties   = casualties
+        self._resolved     = True
+
+    # ── events ──────────────────────────────────────────────────────────────
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if not self._resolved:
+            self.btn_auto.handle_event(event)
+            self.btn_manual.handle_event(event)
+            self.btn_cancel.handle_event(event)
+            if self.btn_auto.clicked:
+                self._auto_resolve()
+            if self.btn_manual.clicked:
+                self.result = {"action": "fight_manually",
+                               "fac_a_id": self._fac_a_id, "fac_b_id": self._fac_b_id,
+                               "sub_pos": self._sub_pos, "casualties": []}
+                self.done = True
+            if self.btn_cancel.clicked:
+                self.done = True
+        else:
+            self.btn_apply.handle_event(event)
+            self.btn_cancel.handle_event(event)
+            if self.btn_apply.clicked:
+                self.result = {
+                    "action":    "auto_resolved",
+                    "winner_fid": self._winner_fid,
+                    "outcome":    self._outcome_str,
+                    "fac_a_id":  self._fac_a_id,
+                    "fac_b_id":  self._fac_b_id,
+                    "sub_pos":   self._sub_pos,
+                    "casualties": self._casualties,
+                    "casualty_text": "; ".join(l.strip() for l in self._result_lines if l.strip()),
+                }
+                self.done = True
+            if self.btn_cancel.clicked:
+                self.done = True
+
+    # ── drawing ─────────────────────────────────────────────────────────────
+
+    def draw(self, surface: pygame.Surface) -> None:
+        self._draw_frame(surface)
+        rx, ry = self.rect.x, self.rect.y
+        fw = self.rect.width
+
+        if not self._resolved:
+            # Two-column layout
+            col_w = (fw - 48) // 2
+            ax, bx = rx + 16, rx + 16 + col_w + 16
+
+            def _draw_side(cx, fac_name, fac_color, units):
+                y = ry + 52
+                col_rect = pygame.Rect(cx, y - 4, col_w, self.rect.height - 100)
+                pygame.draw.rect(surface, (25, 25, 35), col_rect, border_radius=4)
+                pygame.draw.rect(surface, fac_color, col_rect, 1, border_radius=4)
+
+                fn = pygame.font.SysFont("monospace", 13, bold=True)
+                nm = fn.render(fac_name[:22], True, fac_color)
+                surface.blit(nm, (cx + 8, y + 2)); y += 22
+
+                bv_total = 0
+                fsm = pygame.font.SysFont("monospace", 11)
+                for u in units:
+                    bv = u.battle_value or 0
+                    bv_total += bv
+                    bv_color = (160, 200, 160) if bv else (120, 120, 130)
+                    bv_str   = f"{bv:,}" if bv else "?BV"
+                    lbl = fsm.render(f"  {u.name[:18]}", True, (200, 200, 210))
+                    surface.blit(lbl, (cx + 4, y)); y += 13
+                    bv_lbl = fsm.render(f"    BV {bv_str}  [{u.unit_type[:3]}]", True, bv_color)
+                    surface.blit(bv_lbl, (cx + 4, y)); y += 14
+
+                pygame.draw.line(surface, fac_color, (cx + 8, y + 2), (cx + col_w - 8, y + 2), 1)
+                y += 8
+                tot = fn.render(f"Total BV: {bv_total:,}", True, fac_color)
+                surface.blit(tot, (cx + 8, y))
+
+            _draw_side(ax, self._fac_a_name, self._fac_a_color, self._fac_a_units)
+            _draw_side(bx, self._fac_b_name, self._fac_b_color, self._fac_b_units)
+
+            # vs label
+            vs = pygame.font.SysFont("monospace", 18, bold=True).render("VS", True, (200, 60, 60))
+            surface.blit(vs, vs.get_rect(center=(rx + fw // 2, ry + 140)))
+
+            self.btn_auto.draw(surface)
+            self.btn_manual.draw(surface)
+            self.btn_cancel.draw(surface)
+
+        else:
+            # Result panel
+            fy = ry + 52
+            fs = pygame.font.SysFont("monospace", 12)
+            fh = pygame.font.SysFont("monospace", 13, bold=True)
+            wc = (100, 220, 100) if self._winner_fid else (200, 160, 60)
+            surface.blit(fh.render("ENGAGEMENT RESULT", True, wc), (rx + 20, fy)); fy += 22
+            for line in self._result_lines:
+                col = (220, 80, 80) if line.strip().startswith("X") else \
+                      (200, 160, 60) if line.strip().startswith(("<", "!")) else \
+                      (100, 200, 120) if line.strip().startswith(".") else \
+                      (180, 200, 255)
+                surface.blit(fs.render(line, True, col), (rx + 20, fy)); fy += 14
+
+            self.btn_apply.draw(surface)
+            self.btn_cancel.draw(surface)
+
+
 # ── Add Objective dialog ──────────────────────────────────────────────────────
 
 class AddObjectiveDialog(Dialog):

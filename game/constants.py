@@ -207,6 +207,23 @@ TERRAIN_MOVE_COST = {
     TERRAIN_DEEP_WATER: None,     # impassable
 }
 
+# ── Operational movement costs (500 m hexes, tighter than strategic) ──────────
+# None = impassable at operational scale (water too deep to cross in one sub-turn)
+OP_TERRAIN_COST = {
+    TERRAIN_PLAINS:     1.0,
+    TERRAIN_COAST:      1.0,
+    TERRAIN_FOREST:     2.0,
+    TERRAIN_HILLS:      2.0,
+    TERRAIN_DESERT:     1.5,
+    TERRAIN_ARCTIC:     2.5,
+    TERRAIN_MOUNTAINS:  None,     # cliff walls, impassable at operational scale
+    TERRAIN_URBAN:      1.5,
+    TERRAIN_INDUSTRIAL: 1.5,
+    TERRAIN_VOLCANIC:   None,
+    TERRAIN_WATER:      None,
+    TERRAIN_DEEP_WATER: None,
+}
+
 # ── Elevation ─────────────────────────────────────────────────────────────────
 ELEVATION_MIN = 0
 ELEVATION_MAX = 10
