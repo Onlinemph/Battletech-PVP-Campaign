@@ -134,8 +134,8 @@ PHASE_COLOR     = {
     PHASE_NIGHT:     ( 80, 100, 190),
 }
 
-# Operational sub-turns per strategic phase (8h phase ÷ 1h sub-turns)
-OP_TURNS_PER_PHASE = 8
+# Operational sub-turns per strategic phase (4h phase ÷ 1h sub-turns)
+OP_TURNS_PER_PHASE = 4
 
 # Hours of travel covered per strategic phase (shorter = fewer hexes moved per phase)
 HOURS_PER_PHASE = 4
