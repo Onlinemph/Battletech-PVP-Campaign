@@ -225,10 +225,10 @@ class MapRenderer:
                     units_by_hex.setdefault(unit.position, []).append(unit)
         elif self.scale == SCALE_OPERATIONAL and self.op_hex is not None:
             for unit in self.campaign.units.values():
-                if unit.position == self.op_hex and unit.status not in (STATUS_DESTROYED,):
-                    # Units with no sub_position sit at the centre of the op map
-                    sub = unit.sub_position if unit.sub_position is not None else (0, 0)
-                    units_by_hex.setdefault(sub, []).append(unit)
+                if (unit.position == self.op_hex
+                        and unit.status not in (STATUS_DESTROYED,)
+                        and unit.sub_position is not None):
+                    units_by_hex.setdefault(unit.sub_position, []).append(unit)
 
         missions_by_hex: Dict[Tuple[int, int], list] = {}
         if self.scale == SCALE_STRATEGIC:

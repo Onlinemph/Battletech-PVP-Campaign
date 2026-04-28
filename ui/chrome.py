@@ -195,6 +195,7 @@ def draw_sidebar(
     op_hex:       Optional[Tuple[int, int]],
     op_turn_moved: Optional[set] = None,
     op_engagement: Optional[dict] = None,
+    op_place_unit_id: Optional[str] = None,
 ) -> List[Hitbox]:
     """Right sidebar with factions, selected hex info, unit info."""
     rect = pygame.Rect(x, y, width, height)
@@ -349,6 +350,31 @@ def draw_sidebar(
                     surface.blit(font_sm.render(f"  sub{sp}: {' vs '.join(names)}", True, (255, 120, 120)),
                                  (x + 12, cy)); cy += 12
                 cy += 4
+
+    # ── Unplaced units (operational mode) ────────────────────────────────────
+    if scale == SCALE_OPERATIONAL and op_hex is not None:
+        unplaced = [u for u in campaign.units.values()
+                    if u.position == op_hex
+                    and u.sub_position is None
+                    and u.status not in (STATUS_DESTROYED, STATUS_RETREATED)]
+        if unplaced:
+            pygame.draw.line(surface, (180, 160, 40), (x + 6, cy), (x + width - 6, cy), 1); cy += 4
+            surface.blit(font_h.render("UNPLACED UNITS", True, (255, 200, 80)), (x + 12, cy)); cy += 16
+            for u in unplaced:
+                is_placing = (op_place_unit_id == u.id)
+                row = pygame.Rect(x + 8, cy, width - 16, 16)
+                bg  = (50, 50, 20) if is_placing else (BTN_HOVER if row.collidepoint(hover_pos) else PANEL_DARK)
+                pygame.draw.rect(surface, bg, row, border_radius=2)
+                lbl_color = (255, 220, 60) if is_placing else TEXT
+                surface.blit(font_sm.render(u.name[:18], True, lbl_color), (row.x + 4, row.y + 2))
+                btn_r = pygame.Rect(x + width - 44, cy, 38, 14)
+                btn_bg = (80, 140, 80) if is_placing else (BTN_HOVER if btn_r.collidepoint(hover_pos) else BTN_NORMAL)
+                pygame.draw.rect(surface, btn_bg, btn_r, border_radius=2)
+                btn_label = "► ?" if is_placing else "Place"
+                surface.blit(font_sm.render(btn_label, True, (220, 255, 220)), (btn_r.x + 3, btn_r.y + 1))
+                boxes.append(Hitbox("op_place_unit", btn_r, u.id))
+                cy += 18
+            cy += 4
 
     # ── Factions ─────────────────────────────────────────────────────────────
     surface.blit(font_h.render("FACTIONS", True, TEXT_BRIGHT), (x + 12, cy))

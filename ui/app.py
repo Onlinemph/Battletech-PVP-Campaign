@@ -90,6 +90,7 @@ class App:
         # Operational minigame state
         self.op_turn_moved: set = set()   # unit IDs that moved this op-turn
         self.op_engagement: dict = {}     # sub_pos → {"sub_pos","factions","turn_moved"}
+        self.op_place_unit_id: Optional[str] = None   # unit awaiting sub-hex placement
 
         # Right-click context menu
         self._ctx_menu: Optional[dict] = None   # {pos, hex_pos, items: [(label,fn)]}
@@ -380,6 +381,17 @@ class App:
 
         tmap = self._current_terrain_map()
         if coord not in tmap:
+            return
+
+        # Operational placement mode: place an unpositioned unit on a sub-hex
+        if self.op_place_unit_id and self.scale == SCALE_OPERATIONAL:
+            u = self.campaign.units.get(self.op_place_unit_id)
+            if u:
+                u.sub_position = coord
+                if u.status == STATUS_RESERVE:
+                    u.status = STATUS_ACTIVE
+                self._toast_msg(f"Placed {u.name} at {coord}")
+            self.op_place_unit_id = None
             return
 
         # Deploy mode: place a reserve unit on the clicked hex
@@ -747,6 +759,14 @@ class App:
             if u:
                 self.deploy_unit_id = box.data
                 self._toast_msg(f"Deploy {u.name} — click a hex to place")
+        elif box.name == "op_place_unit":
+            if self.op_place_unit_id == box.data:
+                self.op_place_unit_id = None   # toggle off
+            else:
+                self.op_place_unit_id = box.data
+                u = self.campaign.units.get(box.data)
+                name = u.name if u else box.data
+                self._toast_msg(f"Click the map to place {name}")
         elif box.name == "pay_repair":
             u = self.campaign.units.get(box.data)
             if u:
@@ -1003,9 +1023,11 @@ class App:
             if h.to_tuple() in tmap:
                 hover_hex = h.to_tuple()
 
-        # Fog set if a faction filter is active (GM peeks at player view)
+        # Fog set if a faction filter is active (GM peeks at player view).
+        # Only applies at strategic scale — operational sub-hexes use a different
+        # coordinate space and all units in the op-hex can see the whole sub-map.
         fog_set = None
-        if self.faction_filter is not None:
+        if self.faction_filter is not None and self.scale == SCALE_STRATEGIC:
             fog_set = visible_hexes(self.campaign, self.faction_filter)
 
         # Movement range highlight when a source unit is selected in move mode
@@ -1094,6 +1116,7 @@ class App:
             self.faction_filter, mouse_pos, self.scale, self.op_hex,
             op_turn_moved=self.op_turn_moved,
             op_engagement=self.op_engagement if self.op_engagement else None,
+            op_place_unit_id=self.op_place_unit_id,
         )
 
         # Statusbar
