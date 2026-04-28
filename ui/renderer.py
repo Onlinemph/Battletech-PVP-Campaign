@@ -397,9 +397,11 @@ class MapRenderer:
     def _draw_elevation_features(self, hexes: list) -> None:
         """Draw cliff/steep-slope edge lines and elevation number labels."""
         from game.hex_grid import hex_neighbors
-        # For a flat-top hex the 6 neighbor directions map to these corner-pair edges:
-        # neighbors order: E, NE, NW, W, SW, SE  →  corners: (0,5)(0,1)(1,2)(2,3)(3,4)(4,5)
-        EDGE = [(0, 5), (0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+        # For a flat-top hex the 6 neighbor directions map to these corner-pair edges.
+        # hex_to_pixel: x=1.5q, y=(√3/2·q+√3·r) so neighbour (1,0) lands lower-right.
+        # Corners (angle=π/3·i): 0=E-tip,1=SE,2=SW,3=W-tip,4=NW,5=NE
+        # neighbors order: E,   NE,    NW,    W,     SW,    SE
+        EDGE = [(0, 1), (0, 5), (4, 5), (3, 4), (2, 3), (1, 2)]
         CLIFF_COLOR = (200,  50,  20)   # red — impassable cliff
         STEEP_COLOR = (210, 130,  30)   # amber — costly steep grade
         elev_map    = self.campaign.elevation_map
