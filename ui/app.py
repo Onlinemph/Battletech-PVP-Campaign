@@ -400,7 +400,7 @@ class App:
             u = self.campaign.units.get(self.deploy_unit_id)
             if u:
                 u.position     = coord
-                u.sub_position = sub.to_tuple() if sub else None
+                u.sub_position = sub if sub else None
                 u.has_moved    = True
                 if u.status == STATUS_RESERVE:
                     u.status = STATUS_ACTIVE
@@ -448,7 +448,7 @@ class App:
                 else:
                     u = self.campaign.units.get(self.move_source_unit)
                     if u is not None:
-                        dest_sub = sub.to_tuple() if sub is not None else coord
+                        dest_sub = sub if sub is not None else coord
                         u.sub_position = dest_sub
                         if not self.gm_force_move:
                             # Track in destination engagement if one exists there,
