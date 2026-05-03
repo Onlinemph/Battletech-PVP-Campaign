@@ -386,12 +386,14 @@ class App:
 
         # Operational placement mode: place an unpositioned unit on a sub-hex
         if self.op_place_unit_id and self.scale == SCALE_OPERATIONAL:
+            if sub is None:                 # clicked outside sub-hex ring — ignore
+                return
             u = self.campaign.units.get(self.op_place_unit_id)
             if u:
-                u.sub_position = coord
+                u.sub_position = sub        # sub is the operational sub-hex coord
                 if u.status == STATUS_RESERVE:
                     u.status = STATUS_ACTIVE
-                self._toast_msg(f"Placed {u.name} at {coord}")
+                self._toast_msg(f"Placed {u.name} at {sub}")
             self.op_place_unit_id = None
             return
 
