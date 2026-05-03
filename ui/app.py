@@ -381,20 +381,17 @@ class App:
         coord  = strat.to_tuple()
 
         tmap = self._current_terrain_map()
-        check_key = sub if self.scale == SCALE_OPERATIONAL else coord
-        if check_key not in tmap:
+        if coord not in tmap:
             return
 
         # Operational placement mode: place an unpositioned unit on a sub-hex
         if self.op_place_unit_id and self.scale == SCALE_OPERATIONAL:
-            if sub is None:                 # clicked outside sub-hex ring — ignore
-                return
             u = self.campaign.units.get(self.op_place_unit_id)
             if u:
-                u.sub_position = sub        # sub is the operational sub-hex coord
+                u.sub_position = coord
                 if u.status == STATUS_RESERVE:
                     u.status = STATUS_ACTIVE
-                self._toast_msg(f"Placed {u.name} at {sub}")
+                self._toast_msg(f"Placed {u.name} at {coord}")
             self.op_place_unit_id = None
             return
 
