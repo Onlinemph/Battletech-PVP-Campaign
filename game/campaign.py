@@ -27,7 +27,7 @@ def walk_mp_to_strategic(walk_mp: int) -> int:
 
 def walk_mp_to_op_range(walk_mp: int) -> int:
     """Operational hexes per sub-turn for pre-battle positioning (gameplay-scaled)."""
-    return max(1, walk_mp // 2)
+    return max(1, walk_mp)
 
 
 def strategic_reachable(campaign, position: tuple, walk_mp: int,
