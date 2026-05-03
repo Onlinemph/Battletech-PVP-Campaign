@@ -381,7 +381,8 @@ class App:
         coord  = strat.to_tuple()
 
         tmap = self._current_terrain_map()
-        if coord not in tmap:
+        check_key = sub if self.scale == SCALE_OPERATIONAL else coord
+        if check_key not in tmap:
             return
 
         # Operational placement mode: place an unpositioned unit on a sub-hex
