@@ -27,7 +27,7 @@ def walk_mp_to_strategic(walk_mp: int) -> int:
 
 def walk_mp_to_op_range(walk_mp: int) -> int:
     """Operational hexes per sub-turn for pre-battle positioning (gameplay-scaled)."""
-    return max(1, walk_mp)
+    return max(1, walk_mp // 2)
 
 
 def strategic_reachable(campaign, position: tuple, walk_mp: int,
@@ -91,8 +91,9 @@ def operational_reachable(
         return {h.to_tuple() for h in hex_range(center, move_range)
                 if hex_distance(origin, h) <= OPERATIONAL_RADIUS}
 
-    op_map = get_operational_map(campaign, op_hex)
-    origin = Hex(0, 0)
+    op_map   = get_operational_map(campaign, op_hex)
+    elev_map = get_op_elevation_map(campaign, op_hex)
+    origin   = Hex(0, 0)
 
     dist = {sub_pos: 0.0}
     heap = [(0.0, sub_pos)]
@@ -102,6 +103,7 @@ def operational_reachable(
         cost, pos = heapq.heappop(heap)
         if cost > dist.get(pos, float("inf")) + 1e-9:
             continue
+        cur_elev = elev_map.get(pos, 3)
         for nb in hex_neighbors(Hex.from_tuple(pos)):
             nb_t = nb.to_tuple()
             if hex_distance(origin, nb) > OPERATIONAL_RADIUS:
@@ -110,6 +112,10 @@ def operational_reachable(
             entry_cost = OP_TERRAIN_COST.get(terrain)
             if entry_cost is None:
                 continue
+            delta = abs(elev_map.get(nb_t, 3) - cur_elev)
+            if delta >= SLOPE_IMPASSABLE:
+                continue
+            entry_cost += delta * SLOPE_COST_PER_LEVEL
             new_cost = cost + entry_cost
             if new_cost <= move_range + 1e-9 and new_cost < dist.get(nb_t, float("inf")) - 1e-9:
                 dist[nb_t]  = new_cost
@@ -158,6 +164,17 @@ def get_operational_map(campaign: Campaign, strategic_hex: tuple) -> dict:
             parent_terrain, strategic_hex, campaign.map_seed
         )
     return campaign.op_maps[key]
+
+
+def get_op_elevation_map(campaign: Campaign, strategic_hex: tuple) -> dict:
+    """Return (or generate and cache) elevation data for one operational sub-map."""
+    key = f"{strategic_hex[0]},{strategic_hex[1]}"
+    if key not in campaign.op_elevation_maps:
+        from game.map_gen import generate_elevation_map
+        op_map = get_operational_map(campaign, strategic_hex)
+        seed   = campaign.map_seed ^ (hash(strategic_hex) & 0xFFFFFF) ^ 0xA110A
+        campaign.op_elevation_maps[key] = generate_elevation_map(op_map, seed)
+    return campaign.op_elevation_maps[key]
 
 
 def get_tactical_map(campaign: Campaign, strategic_hex: tuple, sub_hex: tuple) -> dict:

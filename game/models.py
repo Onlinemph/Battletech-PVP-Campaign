@@ -242,7 +242,8 @@ class Campaign:
     gm_notes:     str                            = ""
 
     # Operational sub-maps cached by strategic hex key "q,r"
-    op_maps:      Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
+    op_maps:           Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
+    op_elevation_maps: Dict[str, Dict[Tuple[int,int], int]] = field(default_factory=dict)
     # Tactical (mapsheet-level) sub-maps keyed by "stratQ,stratR|subQ,subR"
     tac_maps:     Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
     # Turn/event history: list of {"turn": int, "event": str, "detail": str}
