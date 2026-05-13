@@ -623,15 +623,19 @@ class MapRenderer:
         # sub/tac position.
         groups: Dict[Tuple[float, float], list] = {}
         for u in units:
-            dx, dy = hierarchical_offset(u.sub_position, u.tac_position, self.hex_size)
-            # Quantize so nearly-coincident offsets group together
+            if self.scale == SCALE_OPERATIONAL:
+                dx, dy = 0.0, 0.0   # unit already centered on its own hex
+            else:
+                dx, dy = hierarchical_offset(u.sub_position, u.tac_position, self.hex_size)
             cx = pcx + dx
             cy = pcy + dy
             key_px = (round(cx), round(cy))
             groups.setdefault(key_px, []).append(u)
 
-        # Smaller unit radius when sub-hexes are showing (to fit inside them)
-        if self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
+        # Operational: circles fill the op hex; Strategic: scale with hex_size
+        if self.scale == SCALE_OPERATIONAL:
+            radius = min(max(4, int(self.hex_size * 0.32)), 36)
+        elif self.hex_size >= SUBHEX_ZOOM_THRESHOLD:
             radius = max(4, int(self.hex_size * SUBHEX_RATIO * 0.55))
         else:
             radius = min(max(4, int(self.hex_size * 0.32)), 22)
