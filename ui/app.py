@@ -1105,7 +1105,8 @@ class App:
         # Hover tooltip — unit names above cursor
         if hover_hex and self.scale == SCALE_STRATEGIC:
             tip_units = [u for u in self.campaign.units.values()
-                         if u.position == hover_hex]
+                         if u.position == hover_hex
+                         and (fog_set is None or hover_hex in fog_set)]
             if tip_units:
                 self._draw_hover_tooltip(mouse_pos, tip_units)
 
@@ -1118,6 +1119,7 @@ class App:
             op_turn_moved=self.op_turn_moved,
             op_engagement=self.op_engagement if self.op_engagement else None,
             op_place_unit_id=self.op_place_unit_id,
+            fog_set=fog_set,
         )
 
         # Statusbar

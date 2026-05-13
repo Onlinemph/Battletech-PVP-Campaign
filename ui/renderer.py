@@ -614,6 +614,8 @@ class MapRenderer:
     def _draw_units(self, h: Hex, units: list) -> None:
         key = h.to_tuple()
         is_fog = (self.fog_set is not None and key not in self.fog_set)
+        if is_fog:
+            return
         pcx, pcy = self.hex_center(h)
 
         # Group units by where they actually render at the current zoom so

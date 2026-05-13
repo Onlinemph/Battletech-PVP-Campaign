@@ -196,6 +196,7 @@ def draw_sidebar(
     op_turn_moved: Optional[set] = None,
     op_engagement: Optional[dict] = None,
     op_place_unit_id: Optional[str] = None,
+    fog_set: Optional[set] = None,
 ) -> List[Hitbox]:
     """Right sidebar with factions, selected hex info, unit info."""
     rect = pygame.Rect(x, y, width, height)
@@ -558,8 +559,10 @@ def draw_sidebar(
                 surface.blit(font_sm.render("Control: Uncontrolled", True, TEXT_DIM), (x + 12, cy))
             cy += 16
 
-        # Units in this hex
-        hex_units = [u for u in campaign.units.values() if u.position == selected_hex]
+        # Units in this hex — hide units in fogged hexes
+        hex_units = [u for u in campaign.units.values()
+                     if u.position == selected_hex
+                     and (fog_set is None or selected_hex in fog_set)]
         if hex_units and scale == SCALE_STRATEGIC:
             surface.blit(font.render(f"Units ({len(hex_units)}):", True, TEXT_BRIGHT), (x + 12, cy)); cy += 16
             for u in hex_units:
