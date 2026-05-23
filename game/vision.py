@@ -50,6 +50,47 @@ def visible_hexes(campaign: Campaign, faction_id: str) -> Set[Tuple[int, int]]:
     return visible
 
 
+def visible_op_hexes(
+    campaign: Campaign,
+    op_hex: tuple,
+    faction_id: str,
+) -> Set[Tuple[int, int]]:
+    """Sub-hex positions visible to faction_id inside the given operational hex."""
+    from game.campaign import get_operational_map, get_op_elevation_map
+    op_map   = get_operational_map(campaign, op_hex)
+    elev_map = get_op_elevation_map(campaign, op_hex)
+    visible: Set[Tuple[int, int]] = set()
+    for unit in campaign.units.values():
+        if (unit.faction_id != faction_id
+                or unit.position != op_hex
+                or unit.sub_position is None
+                or unit.status in (STATUS_DESTROYED, STATUS_RETREATED)):
+            continue
+        center = Hex.from_tuple(unit.sub_position)
+        vrange = unit.vision_range
+        vrange += elev_map.get(unit.sub_position, 3) // ELEVATION_VISION_DIV
+        if campaign.current_phase == PHASE_NIGHT and unit.unit_type != UNIT_AEROSPACE:
+            vrange = max(0, vrange - 1)
+        for h in hex_range(center, vrange):
+            key  = h.to_tuple()
+            if key not in op_map:
+                continue
+            dist = hex_distance(center, h)
+            if dist > 1 and unit.unit_type != UNIT_AEROSPACE:
+                blocked = False
+                for mid in hex_line(center, h)[1:-1]:
+                    tdef = TERRAIN.get(op_map.get(mid.to_tuple(), ""))
+                    if tdef and tdef.blocks_vision:
+                        blocked = True
+                        break
+                if blocked:
+                    continue
+            if dist > 0 and op_map.get(key, "") == TERRAIN_FOREST and dist >= vrange:
+                continue
+            visible.add(key)
+    return visible
+
+
 def get_contact_hexes(campaign: Campaign) -> Dict[Tuple[int, int], list]:
     """Return dict of hex → [faction_ids] for hexes with 2+ factions present."""
     hex_factions: Dict[Tuple[int, int], set] = {}

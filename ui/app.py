@@ -30,7 +30,7 @@ from game.campaign import (new_campaign, save_campaign, load_campaign, list_save
                             walk_mp_to_strategic, walk_mp_to_op_range,
                             strategic_reachable, operational_reachable,
                             compute_daily_income)
-from game.vision import visible_hexes, supplied_units, has_supply_sources, get_contact_hexes
+from game.vision import visible_hexes, visible_op_hexes, supplied_units, has_supply_sources, get_contact_hexes
 
 from ui.colors import BG, TEXT, TEXT_BRIGHT, TEXT_DIM, PANEL_DARK, BTN_ACTIVE, BTN_HOVER, BTN_NORMAL, BORDER_LT, BORDER
 from ui.renderer import MapRenderer, pixel_to_hierarchical, SUBHEX_ZOOM_THRESHOLD
@@ -159,6 +159,17 @@ class App:
         self.zoom_idx = min(range(len(ZOOM_LEVELS)), key=lambda i: abs(ZOOM_LEVELS[i] - target))
         self.pan_x = (self.width - SIDEBAR_W) / 2
         self.pan_y = (self.height - TOOLBAR_H - STATUSBAR_H) / 2
+        # Restore any saved engagements for this op-hex
+        op_key = f"{hex_pos[0]},{hex_pos[1]}"
+        raw = self.campaign.op_engagements.get(op_key, {})
+        self.op_engagement = {
+            tuple(int(x) for x in k.split(",")): {
+                "sub_pos":    tuple(v["sub_pos"]),
+                "factions":   v["factions"],
+                "turn_moved": set(v.get("turn_moved", [])),
+            }
+            for k, v in raw.items()
+        }
 
     def _map_rect(self) -> pygame.Rect:
         return pygame.Rect(0, TOOLBAR_H,
@@ -593,6 +604,16 @@ class App:
                 self._toast_msg("No saves found")
         elif name == "save":
             if self.campaign:
+                if self.op_hex is not None:
+                    op_key = f"{self.op_hex[0]},{self.op_hex[1]}"
+                    self.campaign.op_engagements[op_key] = {
+                        f"{sp[0]},{sp[1]}": {
+                            "sub_pos":    list(sp),
+                            "factions":   eng["factions"],
+                            "turn_moved": sorted(eng.get("turn_moved", set())),
+                        }
+                        for sp, eng in self.op_engagement.items()
+                    }
                 path = save_campaign(self.campaign)
                 self._toast_msg(f"Saved: {path.name}")
         elif name == "export":
@@ -1024,12 +1045,12 @@ class App:
             if h.to_tuple() in tmap:
                 hover_hex = h.to_tuple()
 
-        # Fog set if a faction filter is active (GM peeks at player view).
-        # Only applies at strategic scale — operational sub-hexes use a different
-        # coordinate space and all units in the op-hex can see the whole sub-map.
         fog_set = None
-        if self.faction_filter is not None and self.scale == SCALE_STRATEGIC:
-            fog_set = visible_hexes(self.campaign, self.faction_filter)
+        if self.faction_filter is not None:
+            if self.scale == SCALE_STRATEGIC:
+                fog_set = visible_hexes(self.campaign, self.faction_filter)
+            elif self.scale == SCALE_OPERATIONAL and self.op_hex is not None:
+                fog_set = visible_op_hexes(self.campaign, self.op_hex, self.faction_filter)
 
         # Movement range highlight when a source unit is selected in move mode
         highlight_hexes = None

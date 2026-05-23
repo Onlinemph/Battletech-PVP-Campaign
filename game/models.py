@@ -244,6 +244,8 @@ class Campaign:
     # Operational sub-maps cached by strategic hex key "q,r"
     op_maps:           Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
     op_elevation_maps: Dict[str, Dict[Tuple[int,int], int]] = field(default_factory=dict)
+    # Operational engagements keyed "stratQ,stratR" → {"subQ,subR": {sub_pos,factions,turn_moved}}
+    op_engagements:    Dict[str, Dict[str, dict]]           = field(default_factory=dict)
     # Tactical (mapsheet-level) sub-maps keyed by "stratQ,stratR|subQ,subR"
     tac_maps:     Dict[str, Dict[Tuple[int,int], str]] = field(default_factory=dict)
     # Turn/event history: list of {"turn": int, "event": str, "detail": str}
@@ -289,6 +291,21 @@ class Campaign:
             "tac_maps":     {
                 mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
                 for mk, mv in self.tac_maps.items()
+            },
+            "op_elevation_maps": {
+                mk: {f"{k[0]},{k[1]}": v for k, v in mv.items()}
+                for mk, mv in self.op_elevation_maps.items()
+            },
+            "op_engagements": {
+                ok: {
+                    sk: {
+                        "sub_pos":    list(eng["sub_pos"]),
+                        "factions":   eng["factions"],
+                        "turn_moved": sorted(eng.get("turn_moved", set())),
+                    }
+                    for sk, eng in sub.items()
+                }
+                for ok, sub in self.op_engagements.items()
             },
             "event_log":    list(self.event_log),
             "explored_hexes": {
@@ -346,6 +363,21 @@ class Campaign:
             tac_maps     = {
                 mk: parse_tmap(mv)
                 for mk, mv in d.get("tac_maps", {}).items()
+            },
+            op_elevation_maps = {
+                mk: parse_emap(mv)
+                for mk, mv in d.get("op_elevation_maps", {}).items()
+            },
+            op_engagements = {
+                ok: {
+                    sk: {
+                        "sub_pos":    tuple(eng["sub_pos"]),
+                        "factions":   eng["factions"],
+                        "turn_moved": set(eng.get("turn_moved", [])),
+                    }
+                    for sk, eng in sub.items()
+                }
+                for ok, sub in d.get("op_engagements", {}).items()
             },
             event_log      = d.get("event_log", []),
             explored_hexes = {

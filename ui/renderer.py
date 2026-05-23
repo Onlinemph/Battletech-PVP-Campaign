@@ -217,6 +217,13 @@ class MapRenderer:
         hexes = self._visible_terrain_hexes()
         tmap  = self._terrain_map()
 
+        # Resolve elevation map for current scale
+        if self.scale == SCALE_OPERATIONAL and self.op_hex is not None:
+            from game.campaign import get_op_elevation_map
+            self._elev_map = get_op_elevation_map(self.campaign, self.op_hex)
+        else:
+            self._elev_map = self.campaign.elevation_map
+
         # Group units by hex for this scale
         units_by_hex: Dict[Tuple[int, int], list] = {}
         if self.scale == SCALE_STRATEGIC:
@@ -260,7 +267,7 @@ class MapRenderer:
                 self._draw_hex_border(h)
 
         # Elevation cliff/slope edges and number labels
-        if self.scale == SCALE_STRATEGIC and self.campaign.elevation_map:
+        if self._elev_map:
             self._draw_elevation_features(hexes)
 
         # Movement-range highlight overlay
@@ -404,7 +411,7 @@ class MapRenderer:
         EDGE = [(0, 1), (0, 5), (4, 5), (3, 4), (2, 3), (1, 2)]
         CLIFF_COLOR = (200,  50,  20)   # red — impassable cliff
         STEEP_COLOR = (210, 130,  30)   # amber — costly steep grade
-        elev_map    = self.campaign.elevation_map
+        elev_map    = self._elev_map
         visible     = {h.to_tuple() for h, _ in hexes}
 
         for h, _ in hexes:
@@ -461,9 +468,9 @@ class MapRenderer:
         else:
             color = FOG
             is_fog = True
-        # Elevation shading: brighter = higher ground (only on visible strategic hexes)
-        if not is_fog and self.scale == SCALE_STRATEGIC:
-            elev  = self.campaign.elevation_map.get(key, 3)
+        # Elevation shading: brighter = higher ground
+        if not is_fog and self._elev_map:
+            elev  = self._elev_map.get(key, 3)
             shade = 0.75 + (elev / 10) * 0.50   # 0.75 at elev 0 → 1.25 at elev 10
             color = tuple(min(255, max(0, int(c * shade))) for c in color)
         pts = hex_corners(h, self.hex_size, self.ox, self.oy)
